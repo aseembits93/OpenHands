@@ -17,6 +17,9 @@ class LocalFileStore(FileStore):
     def get_full_path(self, path: str) -> str:
         if path.startswith('/'):
             path = path[1:]
+        # Remove redundant os.path.join if path is empty
+        if not path:
+            return self.root
         return os.path.join(self.root, path)
 
     def write(self, path: str, contents: str | bytes) -> None:
@@ -33,9 +36,24 @@ class LocalFileStore(FileStore):
 
     def list(self, path: str) -> list[str]:
         full_path = self.get_full_path(path)
-        files = [os.path.join(path, f) for f in os.listdir(full_path)]
-        files = [f + '/' if os.path.isdir(self.get_full_path(f)) else f for f in files]
-        return files
+        # Cache full_path computation
+        try:
+            entries = os.listdir(full_path)
+        except FileNotFoundError:
+            # Raise immediately: preserves behavior, saves downstream isdir/list/processing
+            raise
+        result = []
+        # Precompute prefix once for efficiency
+        prefix = path.rstrip('/') + '/' if path else ''
+        # Use os.scandir for single-pass directory entry stat'ing (much faster)
+        with os.scandir(full_path) as it:
+            for entry in it:
+                rel_path = prefix + entry.name
+                if entry.is_dir():
+                    result.append(rel_path + '/')
+                else:
+                    result.append(rel_path)
+        return result
 
     def delete(self, path: str) -> None:
         try:
