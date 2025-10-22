@@ -93,18 +93,12 @@ def glob_to_cmdrun(pattern: str, path: str = '.') -> str:
     quoted_path = shlex.quote(path)
     quoted_pattern = shlex.quote(pattern)
 
-    # Use ripgrep in a glob-only mode with -g flag and --files to list files
-    # This most closely matches the behavior of the NodeJS glob implementation
-    rg_cmd = f'rg --files {quoted_path} -g {quoted_pattern} --sortr=modified'
-
-    # Sort results and limit to 100 entries (matching the Node.js implementation)
-    sort_and_limit_cmd = ' | head -n 100'
-
-    complete_cmd = f'{rg_cmd}{sort_and_limit_cmd}'
-
-    # Add a header to the output
-    echo_cmd = f'echo "Below are the execution results of the glob command: {complete_cmd}\n"; '
-    return echo_cmd + complete_cmd
+    # Build complete command in one step to reduce string concatenation overhead
+    return (
+        f'echo "Below are the execution results of the glob command: '
+        f'rg --files {quoted_path} -g {quoted_pattern} --sortr=modified | head -n 100\n"; '
+        f'rg --files {quoted_path} -g {quoted_pattern} --sortr=modified | head -n 100'
+    )
 
 
 def response_to_actions(
