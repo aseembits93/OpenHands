@@ -12,6 +12,10 @@ from openhands.microagent.microagent import BaseMicroagent
 from openhands.microagent.types import MicroagentContentResponse, MicroagentResponse
 from openhands.server.types import AppMode
 
+_env = Environment(
+    loader=FileSystemLoader('openhands/integrations/templates/suggested_task')
+)
+
 
 class TokenResponse(BaseModel):
     token: str
@@ -86,19 +90,15 @@ class SuggestedTask(BaseModel):
         issue_number = self.issue_number
         repo = self.repo
 
-        env = Environment(
-            loader=FileSystemLoader('openhands/integrations/templates/suggested_task')
-        )
-
         template = None
         if task_type == TaskType.MERGE_CONFLICTS:
-            template = env.get_template('merge_conflict_prompt.j2')
+            template = _env.get_template('merge_conflict_prompt.j2')
         elif task_type == TaskType.FAILING_CHECKS:
-            template = env.get_template('failing_checks_prompt.j2')
+            template = _env.get_template('failing_checks_prompt.j2')
         elif task_type == TaskType.UNRESOLVED_COMMENTS:
-            template = env.get_template('unresolved_comments_prompt.j2')
+            template = _env.get_template('unresolved_comments_prompt.j2')
         elif task_type == TaskType.OPEN_ISSUE:
-            template = env.get_template('open_issue_prompt.j2')
+            template = _env.get_template('open_issue_prompt.j2')
         else:
             raise ValueError(f'Unsupported task type: {task_type}')
 
