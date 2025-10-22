@@ -236,13 +236,10 @@ class MCPConfig(BaseModel):
     @staticmethod
     def _normalize_servers(servers_data: list[dict | str]) -> list[dict]:
         """Helper method to normalize SSE server configurations."""
-        normalized = []
-        for server in servers_data:
-            if isinstance(server, str):
-                normalized.append({'url': server})
-            else:
-                normalized.append(server)
-        return normalized
+        return [
+            {'url': server} if isinstance(server, str) else server
+            for server in servers_data
+        ]
 
     @model_validator(mode='before')
     def convert_string_urls(cls, data):
