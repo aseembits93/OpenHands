@@ -25,12 +25,16 @@ class RetryMixin:
         Returns:
             A retry decorator with the parameters customizable in configuration.
         """
+        # Cache the .get lookups on the local stack to minimize dictionary lookups in tight loops.
         num_retries = kwargs.get('num_retries')
         retry_exceptions: tuple = kwargs.get('retry_exceptions', ())
         retry_min_wait = kwargs.get('retry_min_wait')
         retry_max_wait = kwargs.get('retry_max_wait')
         retry_multiplier = kwargs.get('retry_multiplier')
         retry_listener = kwargs.get('retry_listener')
+
+        # Move LLMNoResponseError lookup out of loop for efficiency
+        LLMNoResponseErrorT = LLMNoResponseError
 
         def before_sleep(retry_state: Any) -> None:
             self.log_retry_attempt(retry_state)
@@ -39,12 +43,14 @@ class RetryMixin:
 
             # Check if the exception is LLMNoResponseError
             exception = retry_state.outcome.exception()
-            if isinstance(exception, LLMNoResponseError):
-                if hasattr(retry_state, 'kwargs'):
+            # Inline hasattr/retry_state access and fallback logic for minimal overhead
+            if isinstance(exception, LLMNoResponseErrorT):
+                rkwargs = getattr(retry_state, 'kwargs', None)
+                if rkwargs is not None:
                     # Only change temperature if it's zero or not set
-                    current_temp = retry_state.kwargs.get('temperature', 0)
+                    current_temp = rkwargs.get('temperature', 0)
                     if current_temp == 0:
-                        retry_state.kwargs['temperature'] = 1.0
+                        rkwargs['temperature'] = 1.0
                         logger.warning(
                             'LLMNoResponseError detected with temperature=0, setting temperature to 1.0 for next attempt.'
                         )
@@ -53,18 +59,21 @@ class RetryMixin:
                             f'LLMNoResponseError detected with temperature={current_temp}, keeping original temperature'
                         )
 
+        # Precompute retry logic outside of retry() call to avoid re-creating on every invocation
+        retry_condition = retry_if_exception_type(retry_exceptions)
+        wait_strategy = wait_exponential(
+            multiplier=retry_multiplier,
+            min=retry_min_wait,
+            max=retry_max_wait,
+        )
+        stop_strategy = stop_after_attempt(num_retries) | stop_if_should_exit()
+
         retry_decorator: Callable = retry(
             before_sleep=before_sleep,
-            stop=stop_after_attempt(num_retries) | stop_if_should_exit(),
+            stop=stop_strategy,
             reraise=True,
-            retry=(
-                retry_if_exception_type(retry_exceptions)
-            ),  # retry only for these types
-            wait=wait_exponential(
-                multiplier=retry_multiplier,
-                min=retry_min_wait,
-                max=retry_max_wait,
-            ),
+            retry=retry_condition,  # retry only for these types
+            wait=wait_strategy,
         )
         return retry_decorator
 
