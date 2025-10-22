@@ -40,6 +40,11 @@ class GitlabIssueHandler(IssueHandlerInterface):
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
 
+        # Precompute authorize_url for improved performance
+        self._authorize_url: str = (
+            f'https://{self.username}:{self.token}@{self.base_domain}/'
+        )
+
     def set_owner(self, owner: str) -> None:
         self.owner = owner
 
@@ -54,7 +59,7 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'https://{self.base_domain}/api/v4/projects/{project_path}'
 
     def get_authorize_url(self) -> str:
-        return f'https://{self.username}:{self.token}@{self.base_domain}/'
+        return self._authorize_url
 
     def get_branch_url(self, branch_name: str) -> str:
         return self.get_base_url() + f'/repository/branches/{branch_name}'
