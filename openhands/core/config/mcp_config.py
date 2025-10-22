@@ -326,9 +326,9 @@ class MCPConfig(BaseModel):
 
     def merge(self, other: MCPConfig):
         return MCPConfig(
-            sse_servers=self.sse_servers + other.sse_servers,
-            stdio_servers=self.stdio_servers + other.stdio_servers,
-            shttp_servers=self.shttp_servers + other.shttp_servers,
+            sse_servers=[*self.sse_servers, *other.sse_servers],
+            stdio_servers=[*self.stdio_servers, *other.stdio_servers],
+            shttp_servers=[*self.shttp_servers, *other.shttp_servers],
         )
 
 
