@@ -309,10 +309,13 @@ class Memory:
 
         # Check all repo microagents for MCP tools (always active)
         for agent in self.repo_microagents.values():
-            if agent.metadata.mcp_tools:
-                mcp_configs.append(agent.metadata.mcp_tools)
+            mcp_tools = agent.metadata.mcp_tools
+            if mcp_tools:
+                mcp_configs.append(mcp_tools)
                 logger.debug(
-                    f'Found MCP tools in repo microagent {agent.name}: {agent.metadata.mcp_tools}'
+                    "Found MCP tools in repo microagent %s: %s",
+                    agent.name,
+                    mcp_tools
                 )
 
         return mcp_configs
