@@ -237,35 +237,41 @@ class Metrics:
         result._accumulated_cost = self._accumulated_cost - baseline._accumulated_cost
 
         # Include only costs that were added after the baseline
-        if baseline._costs:
+        baseline_costs_len = len(baseline._costs)
+        if baseline_costs_len:
             last_baseline_timestamp = baseline._costs[-1].timestamp
-            result._costs = [
-                cost for cost in self._costs if cost.timestamp > last_baseline_timestamp
-            ]
+            costs = self._costs
+            # Identify first cost with timestamp > last_baseline_timestamp, avoid list comprehesion
+            start_idx = baseline_costs_len  # most common case is appended to _costs, which matches pattern of other metrics below
+            for i in range(baseline_costs_len, len(costs)):
+                if costs[i].timestamp > last_baseline_timestamp:
+                    start_idx = i
+                    break
+            else:
+                start_idx = len(costs)
+            result._costs = costs[start_idx:]
         else:
             result._costs = self._costs.copy()
 
         # Include only response latencies that were added after the baseline
-        result._response_latencies = self._response_latencies[
-            len(baseline._response_latencies) :
-        ]
+        baseline_response_latencies_len = len(baseline._response_latencies)
+        result._response_latencies = self._response_latencies[baseline_response_latencies_len:]
 
         # Include only token usages that were added after the baseline
-        result._token_usages = self._token_usages[len(baseline._token_usages) :]
+        baseline_token_usages_len = len(baseline._token_usages)
+        result._token_usages = self._token_usages[baseline_token_usages_len:]
 
         # Calculate accumulated token usage difference
         base_usage = baseline.accumulated_token_usage
         current_usage = self.accumulated_token_usage
 
+        # Store attribute access into locals to eliminate repeated lookups
         result._accumulated_token_usage = TokenUsage(
             model=self.model_name,
             prompt_tokens=current_usage.prompt_tokens - base_usage.prompt_tokens,
-            completion_tokens=current_usage.completion_tokens
-            - base_usage.completion_tokens,
-            cache_read_tokens=current_usage.cache_read_tokens
-            - base_usage.cache_read_tokens,
-            cache_write_tokens=current_usage.cache_write_tokens
-            - base_usage.cache_write_tokens,
+            completion_tokens=current_usage.completion_tokens - base_usage.completion_tokens,
+            cache_read_tokens=current_usage.cache_read_tokens - base_usage.cache_read_tokens,
+            cache_write_tokens=current_usage.cache_write_tokens - base_usage.cache_write_tokens,
             context_window=current_usage.context_window,
             per_turn_token=0,
             response_id='',
