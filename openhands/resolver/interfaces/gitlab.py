@@ -35,10 +35,22 @@ class GitlabIssueHandler(IssueHandlerInterface):
         self.token = token
         self.username = username
         self.base_domain = base_domain
-        self.base_url = self.get_base_url()
-        self.download_url = self.get_download_url()
-        self.clone_url = self.get_clone_url()
-        self.headers = self.get_headers()
+
+        # Precompute and cache URLs and headers for improved efficiency
+        project_path = quote(f'{self.owner}/{self.repo}', safe='')
+        self.base_url = f'https://{self.base_domain}/api/v4/projects/{project_path}'
+        self.download_url = f'{self.base_url}/issues'
+
+        if self.username:
+            username_and_token = f'{self.username}:{self.token}'
+        else:
+            username_and_token = self.token
+        self.clone_url = f'https://{username_and_token}@{self.base_domain}/{self.owner}/{self.repo}.git'
+
+        self.headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Accept': 'application/json',
+        }
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -63,10 +75,8 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'{self.base_url}/issues'
 
     def get_clone_url(self) -> str:
-        username_and_token = self.token
-        if self.username:
-            username_and_token = f'{self.username}:{self.token}'
-        return f'https://{username_and_token}@{self.base_domain}/{self.owner}/{self.repo}.git'
+        # Directly use cached value to save method call computation
+        return self.clone_url
 
     def get_graphql_url(self) -> str:
         return f'https://{self.base_domain}/api/graphql'
