@@ -39,6 +39,7 @@ class GitlabIssueHandler(IssueHandlerInterface):
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
+        self._default_branch_name: str | None = None  # cache for default branch name
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -72,7 +73,10 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'https://{self.base_domain}/api/graphql'
 
     def get_compare_url(self, branch_name: str) -> str:
-        return f'https://{self.base_domain}/{self.owner}/{self.repo}/-/compare/{self.get_default_branch_name()}...{branch_name}'
+        # Use cached default branch name if available to avoid repeated API calls
+        if self._default_branch_name is None:
+            self._default_branch_name = self.get_default_branch_name()
+        return f'https://{self.base_domain}/{self.owner}/{self.repo}/-/compare/{self._default_branch_name}...{branch_name}'
 
     def get_converted_issues(
         self, issue_numbers: list[int] | None = None, comment_id: int | None = None
@@ -234,10 +238,15 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'https://{self.base_domain}/{self.owner}/{self.repo}/-/merge_requests/{pr_number}'
 
     def get_default_branch_name(self) -> str:
+        # If already cached, use the cached value
+        if self._default_branch_name is not None:
+            return self._default_branch_name
         response = httpx.get(f'{self.base_url}', headers=self.headers)
         response.raise_for_status()
         data = response.json()
-        return str(data['default_branch'])
+        default_branch = str(data['default_branch'])
+        self._default_branch_name = default_branch  # Cache for subsequent calls
+        return default_branch
 
     def create_pull_request(self, data: dict[str, Any] | None = None) -> dict[str, Any]:
         if data is None:
