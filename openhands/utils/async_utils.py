@@ -29,16 +29,12 @@ def call_async_from_sync(
     if not asyncio.iscoroutinefunction(corofn):
         raise ValueError('corofn is not a coroutine function')
 
-    async def arun():
-        coro = corofn(*args, **kwargs)
-        result = await coro
-        return result
-
     def run():
         loop_for_thread = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop_for_thread)
-            return asyncio.run(arun())
+            coro = corofn(*args, **kwargs)
+            return loop_for_thread.run_until_complete(coro)
         finally:
             loop_for_thread.close()
 
