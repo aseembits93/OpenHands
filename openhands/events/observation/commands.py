@@ -58,16 +58,19 @@ class CmdOutputMetadata(BaseModel):
     @classmethod
     def matches_ps1_metadata(cls, string: str) -> list[re.Match[str]]:
         matches = []
+        errors = []
         for match in CMD_OUTPUT_METADATA_PS1_REGEX.finditer(string):
             try:
                 json.loads(match.group(1).strip())  # Try to parse as JSON
                 matches.append(match)
             except json.JSONDecodeError:
-                logger.warning(
-                    f'Failed to parse PS1 metadata: {match.group(1)}. Skipping.',
-                    exc_info=True,
-                )
+                errors.append(match.group(1))
                 continue  # Skip if not valid JSON
+        for error_value in errors:
+            logger.warning(
+                f'Failed to parse PS1 metadata: {error_value}. Skipping.',
+                exc_info=True,
+            )
         return matches
 
     @classmethod
