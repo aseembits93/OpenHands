@@ -38,16 +38,17 @@ class GitlabIssueHandler(IssueHandlerInterface):
         self.base_url = self.get_base_url()
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
-        self.headers = self.get_headers()
+        self.headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Accept': 'application/json',
+        }
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
 
     def get_headers(self) -> dict[str, str]:
-        return {
-            'Authorization': f'Bearer {self.token}',
-            'Accept': 'application/json',
-        }
+        # Return precomputed headers for efficiency
+        return self.headers
 
     def get_base_url(self) -> str:
         project_path = quote(f'{self.owner}/{self.repo}', safe='')
