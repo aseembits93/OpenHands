@@ -44,9 +44,6 @@ from openhands.events.tool import ToolCallMetadata
 def grep_to_cmdrun(
     pattern: str, path: str | None = None, include: str | None = None
 ) -> str:
-    # NOTE: This function currently relies on `rg` (ripgrep).
-    # `rg` may not be installed when using CLIRuntime or LocalRuntime.
-    # TODO: Implement a fallback to `grep` if `rg` is not available.
     """Convert grep tool arguments to a shell command string.
 
     Args:
@@ -57,29 +54,23 @@ def grep_to_cmdrun(
     Returns:
         A properly escaped shell command string for ripgrep
     """
-    # Use shlex.quote to properly escape all shell special characters
     quoted_pattern = shlex.quote(pattern)
-    path_arg = shlex.quote(path) if path else '.'
+    path_arg = shlex.quote(path) if path is not None else '.'
 
     # Build ripgrep command
     rg_cmd = f'rg -li {quoted_pattern} --sortr=modified'
 
-    if include:
+    if include is not None:
         quoted_include = shlex.quote(include)
         rg_cmd += f' --glob {quoted_include}'
 
-    # Build the complete command
     complete_cmd = f'{rg_cmd} {path_arg} | head -n 100'
 
     # Add a header to the output
-    echo_cmd = f'echo "Below are the execution results of the search command: {complete_cmd}\n"; '
-    return echo_cmd + complete_cmd
+    return f'echo "Below are the execution results of the search command: {complete_cmd}\\n"; {complete_cmd}'
 
 
 def glob_to_cmdrun(pattern: str, path: str = '.') -> str:
-    # NOTE: This function currently relies on `rg` (ripgrep).
-    # `rg` may not be installed when using CLIRuntime or LocalRuntime
-    # TODO: Implement a fallback to `find` if `rg` is not available.
     """Convert glob tool arguments to a shell command string.
 
     Args:
@@ -89,22 +80,12 @@ def glob_to_cmdrun(pattern: str, path: str = '.') -> str:
     Returns:
         A properly escaped shell command string for ripgrep implementing glob
     """
-    # Use shlex.quote to properly escape all shell special characters
     quoted_path = shlex.quote(path)
     quoted_pattern = shlex.quote(pattern)
 
-    # Use ripgrep in a glob-only mode with -g flag and --files to list files
-    # This most closely matches the behavior of the NodeJS glob implementation
     rg_cmd = f'rg --files {quoted_path} -g {quoted_pattern} --sortr=modified'
-
-    # Sort results and limit to 100 entries (matching the Node.js implementation)
-    sort_and_limit_cmd = ' | head -n 100'
-
-    complete_cmd = f'{rg_cmd}{sort_and_limit_cmd}'
-
-    # Add a header to the output
-    echo_cmd = f'echo "Below are the execution results of the glob command: {complete_cmd}\n"; '
-    return echo_cmd + complete_cmd
+    complete_cmd = f'{rg_cmd} | head -n 100'
+    return f'echo "Below are the execution results of the glob command: {complete_cmd}\\n"; {complete_cmd}'
 
 
 def response_to_actions(
@@ -120,9 +101,10 @@ def response_to_actions(
         if isinstance(assistant_msg.content, str):
             thought = assistant_msg.content
         elif isinstance(assistant_msg.content, list):
-            for msg in assistant_msg.content:
-                if msg['type'] == 'text':
-                    thought += msg['text']
+            # Use efficient joining for list-based content
+            thought = ''.join(
+                msg['text'] for msg in assistant_msg.content if msg.get('type') == 'text'
+            )
 
         # Process each tool call to OpenHands action
         for i, tool_call in enumerate(assistant_msg.tool_calls):
@@ -220,17 +202,15 @@ def response_to_actions(
             )
             actions.append(action)
     else:
+        content_str = str(assistant_msg.content) if assistant_msg.content else ''
         actions.append(
             MessageAction(
-                content=str(assistant_msg.content) if assistant_msg.content else '',
+                content=content_str,
                 wait_for_response=True,
             )
         )
 
     # Add response id to actions
-    # This will ensure we can match both actions without tool calls (e.g. MessageAction)
-    # and actions with tool calls (e.g. CmdRunAction, IPythonRunCellAction, etc.)
-    # with the token usage data
     for action in actions:
         action.response_id = response.id
 
