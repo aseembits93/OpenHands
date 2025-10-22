@@ -57,7 +57,8 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'https://{self.username}:{self.token}@{self.base_domain}/'
 
     def get_branch_url(self, branch_name: str) -> str:
-        return self.get_base_url() + f'/repository/branches/{branch_name}'
+        # Directly access base_url (already computed), minimizing function calls
+        return f'{self.base_url}/repository/branches/{branch_name}'
 
     def get_download_url(self) -> str:
         return f'{self.base_url}/issues'
@@ -309,6 +310,10 @@ class GitlabIssueHandler(IssueHandlerInterface):
         thread_comments: list[str] | None,
     ) -> list[str]:
         return []
+
+    def _get_base_url_cached(self) -> str:
+        # Use cached _project_path rather than recomputing
+        return f'https://{self.base_domain}/api/v4/projects/{self._project_path}'
 
 
 class GitlabPRHandler(GitlabIssueHandler):
