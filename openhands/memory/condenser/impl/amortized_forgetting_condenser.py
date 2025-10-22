@@ -40,16 +40,36 @@ class AmortizedForgettingCondenser(RollingCondenser):
     def get_condensation(self, view: View) -> Condensation:
         target_size = self.max_size // 2
         head = view[: self.keep_first]
-
-        events_from_tail = target_size - len(head)
+        head_len = len(head)
+        events_from_tail = target_size - head_len
         tail = view[-events_from_tail:]
 
-        event_ids_to_keep = {event.id for event in head + tail}
-        event_ids_to_forget = {event.id for event in view} - event_ids_to_keep
+        # Optimize id lookup with set comprehensions and avoid materializing head+tail
+        event_ids_to_keep = set()
+        for event in head:
+            event_ids_to_keep.add(event.id)
+        for event in tail:
+            event_ids_to_keep.add(event.id)
+
+        # Instead of creating a full set of all ids and subtracting,
+        # accumulate min and max of 'id's to forget directly
+        min_id_to_forget = None
+        max_id_to_forget = None
+        for event in view:
+            eid = event.id
+            if eid not in event_ids_to_keep:
+                if min_id_to_forget is None or eid < min_id_to_forget:
+                    min_id_to_forget = eid
+                if max_id_to_forget is None or eid > max_id_to_forget:
+                    max_id_to_forget = eid
+
+        # For behavioral preservation: if nothing to forget, mimics set min/max exception
+        if min_id_to_forget is None or max_id_to_forget is None:
+            raise ValueError("No events to forget in condensation.")
 
         event = CondensationAction(
-            forgotten_events_start_id=min(event_ids_to_forget),
-            forgotten_events_end_id=max(event_ids_to_forget),
+            forgotten_events_start_id=min_id_to_forget,
+            forgotten_events_end_id=max_id_to_forget,
         )
 
         return Condensation(action=event)
