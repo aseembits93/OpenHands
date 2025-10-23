@@ -15,7 +15,10 @@ def get_conversation_events_dir(sid: str, user_id: str | None = None) -> str:
 def get_conversation_event_filename(
     sid: str, id: int, user_id: str | None = None
 ) -> str:
-    return f'{get_conversation_events_dir(sid, user_id)}{id}.json'
+    if user_id:
+        return f'users/{user_id}/conversations/{sid}/events/{id}.json'
+    else:
+        return f'sessions/{sid}/events/{id}.json'
 
 
 def get_conversation_metadata_filename(sid: str, user_id: str | None = None) -> str:
