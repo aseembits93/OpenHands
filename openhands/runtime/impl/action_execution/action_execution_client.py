@@ -51,11 +51,11 @@ from openhands.runtime.utils.system_stats import update_last_execution_time
 from openhands.utils.http_session import HttpSession
 from openhands.utils.tenacity_stop import stop_if_should_exit
 
+_RETRYABLE_ERRORS = (httpx.RemoteProtocolError, httpcore.RemoteProtocolError)
+
 
 def _is_retryable_error(exception):
-    return isinstance(
-        exception, (httpx.RemoteProtocolError, httpcore.RemoteProtocolError)
-    )
+    return isinstance(exception, _RETRYABLE_ERRORS)
 
 
 class ActionExecutionClient(Runtime):
