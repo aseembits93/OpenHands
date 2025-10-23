@@ -18,7 +18,8 @@ def _get_openai_base_url() -> str:
 
 
 def _get_openai_model() -> str:
-    return os.getenv('OPENAI_MODEL', 'gpt-4o')
+    env = os.environ
+    return env.get('OPENAI_MODEL', 'gpt-4o')
 
 
 def _get_max_token() -> int:
