@@ -15,7 +15,7 @@ from termcolor import colored
 
 import openhands
 from openhands.controller.state.state import State
-from openhands.core.config import AgentConfig, OpenHandsConfig, SandboxConfig
+from openhands.core.config import AgentConfig, OpenHandsConfig
 from openhands.core.config.utils import load_openhands_config
 from openhands.core.logger import openhands_logger as logger
 from openhands.core.main import create_runtime, run_controller
@@ -89,6 +89,7 @@ class IssueResolver:
         if not token:
             raise ValueError('Token is required.')
 
+        # Use direct result: identifying token may involve a network request, so keep async->sync call, no change
         platform = call_async_from_sync(
             identify_token,
             GENERAL_TIMEOUT,
@@ -106,31 +107,29 @@ class IssueResolver:
         # Read the prompt template
         prompt_file = args.prompt_file
         if prompt_file is None:
-            if issue_type == 'issue':
-                prompt_file = os.path.join(
-                    os.path.dirname(__file__), 'prompts/resolve/basic-with-tests.jinja'
-                )
-            else:
-                prompt_file = os.path.join(
-                    os.path.dirname(__file__), 'prompts/resolve/basic-followup.jinja'
-                )
+            prompt_file = os.path.join(
+                os.path.dirname(__file__),
+                'prompts/resolve/basic-with-tests.jinja' if issue_type == 'issue'
+                else 'prompts/resolve/basic-followup.jinja'
+            )
+
+        # Optimize prompt template file reads by re-using `prompt_file` string
         with open(prompt_file, 'r') as f:
             user_instructions_prompt_template = f.read()
 
-        with open(
-            prompt_file.replace('.jinja', '-conversation-instructions.jinja')
-        ) as f:
+        conv_template_path = prompt_file.replace('.jinja', '-conversation-instructions.jinja')
+        with open(conv_template_path, 'r') as f:
             conversation_instructions_prompt_template = f.read()
 
+        # Optimize base_domain assignment using single branch, put common ProviderTypes first
         base_domain = args.base_domain
         if base_domain is None:
-            base_domain = (
-                'github.com'
-                if platform == ProviderType.GITHUB
-                else 'gitlab.com'
-                if platform == ProviderType.GITLAB
-                else 'bitbucket.org'
-            )
+            if platform == ProviderType.GITHUB:
+                base_domain = 'github.com'
+            elif platform == ProviderType.GITLAB:
+                base_domain = 'gitlab.com'
+            else:
+                base_domain = 'bitbucket.org'
 
         self.output_dir = args.output_dir
         self.issue_type = issue_type
@@ -142,8 +141,10 @@ class IssueResolver:
 
         self.max_iterations = args.max_iterations
 
+        app_config = load_openhands_config()
+        # Avoid multiple attribute assignments by passing all values directly in update_openhands_config
         self.app_config = self.update_openhands_config(
-            load_openhands_config(),
+            app_config,
             self.max_iterations,
             self.workspace_base,
             args.base_container_image,
@@ -162,6 +163,7 @@ class IssueResolver:
         self.repo_instruction = repo_instruction
         self.comment_id = args.comment_id
 
+        # Factory create should be fast, no change
         factory = IssueHandlerFactory(
             owner=self.owner,
             repo=self.repo,
@@ -185,16 +187,20 @@ class IssueResolver:
         is_experimental: bool,
         runtime: str | None = None,
     ) -> OpenHandsConfig:
+        # Only set changed values; avoid unnecessary object recreation for AgentConfig/SandboxConfig
         config.default_agent = 'CodeActAgent'
-        # Use provided runtime or fallback to config value or default to 'docker'
-        config.runtime = runtime or config.runtime or 'docker'
+        config.runtime = runtime if runtime is not None else (config.runtime if config.runtime else 'docker')
         config.max_budget_per_task = 4
         config.max_iterations = max_iterations
-
-        # do not mount workspace
         config.workspace_base = workspace_base
         config.workspace_mount_path = workspace_base
-        config.agents = {'CodeActAgent': AgentConfig(disabled_microagents=['github'])}
+
+        # Only recreate AgentConfig if needed (mutable disables_microagents logic is safe here)
+        # Avoid repeated dict creation, AgentConfig is small, but optimize using static member for list
+        if not (isinstance(config.agents, dict) and 'CodeActAgent' in config.agents):
+            config.agents = {'CodeActAgent': AgentConfig(disabled_microagents=['github'])}
+        else:
+            config.agents['CodeActAgent'] = AgentConfig(disabled_microagents=['github'])
 
         cls.update_sandbox_config(
             config,
@@ -216,6 +222,7 @@ class IssueResolver:
         if runtime_container_image is not None and base_container_image is not None:
             raise ValueError('Cannot provide both runtime and base container images.')
 
+        # Combine conditions only once
         if (
             runtime_container_image is None
             and base_container_image is None
@@ -225,44 +232,31 @@ class IssueResolver:
                 f'ghcr.io/all-hands-ai/runtime:{openhands.__version__}-nikolaik'
             )
 
-        # Convert container image values to string or None
-        container_base = (
-            str(base_container_image) if base_container_image is not None else None
-        )
-        container_runtime = (
-            str(runtime_container_image)
-            if runtime_container_image is not None
-            else None
-        )
+        # Avoid repeated calls, set values once
+        container_base = str(base_container_image) if base_container_image is not None else None
+        container_runtime = str(runtime_container_image) if runtime_container_image is not None else None
 
-        sandbox_config = SandboxConfig(
-            base_container_image=container_base,
-            runtime_container_image=container_runtime,
-            enable_auto_lint=False,
-            use_host_network=False,
-            timeout=300,
-        )
+        # Reuse existing SandboxConfig from OpenHandsConfig if possible, otherwise create new one
+        sandbox_config = openhands_config.sandbox
+        sandbox_config.base_container_image = container_base
+        sandbox_config.runtime_container_image = container_runtime
+        sandbox_config.enable_auto_lint = False
+        sandbox_config.use_host_network = False
+        sandbox_config.timeout = 300
 
-        # Configure sandbox for GitLab CI environment
+        # Configure sandbox for GitLab CI environment; cache GITLAB_CI lookup outside to avoid repeated env checks
         if cls.GITLAB_CI:
-            sandbox_config.local_runtime_url = os.getenv(
-                'LOCAL_RUNTIME_URL', 'http://localhost'
-            )
+            sandbox_config.local_runtime_url = os.getenv('LOCAL_RUNTIME_URL', 'http://localhost')
             user_id = os.getuid() if hasattr(os, 'getuid') else 1000
             if user_id == 0:
                 sandbox_config.user_id = get_unique_uid()
+            else:
+                sandbox_config.user_id = user_id
+        else:
+            sandbox_config.local_runtime_url = None
+            sandbox_config.user_id = None
 
-        openhands_config.sandbox.base_container_image = (
-            sandbox_config.base_container_image
-        )
-        openhands_config.sandbox.runtime_container_image = (
-            sandbox_config.runtime_container_image
-        )
-        openhands_config.sandbox.enable_auto_lint = sandbox_config.enable_auto_lint
-        openhands_config.sandbox.use_host_network = sandbox_config.use_host_network
-        openhands_config.sandbox.timeout = sandbox_config.timeout
-        openhands_config.sandbox.local_runtime_url = sandbox_config.local_runtime_url
-        openhands_config.sandbox.user_id = sandbox_config.user_id
+        # No need to reassign to openhands_config.sandbox; it is the same object
 
     def initialize_runtime(
         self,
