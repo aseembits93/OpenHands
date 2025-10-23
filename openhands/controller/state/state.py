@@ -8,15 +8,11 @@ from enum import Enum
 from typing import Any
 
 import openhands
-from openhands.controller.state.control_flags import (
-    BudgetControlFlag,
-    IterationControlFlag,
-)
+from openhands.controller.state.control_flags import (BudgetControlFlag,
+                                                      IterationControlFlag)
 from openhands.core.logger import openhands_logger as logger
 from openhands.core.schema import AgentState
-from openhands.events.action import (
-    MessageAction,
-)
+from openhands.events.action import MessageAction
 from openhands.events.action.agent import AgentFinishAction
 from openhands.events.event import Event, EventSource
 from openhands.llm.metrics import Metrics
@@ -24,6 +20,8 @@ from openhands.memory.view import View
 from openhands.server.services.conversation_stats import ConversationStats
 from openhands.storage.files import FileStore
 from openhands.storage.locations import get_conversation_agent_state_filename
+
+_WEB_HOST = os.environ.get("WEB_HOST", "unspecified")
 
 RESUMABLE_STATES = [
     AgentState.RUNNING,
@@ -278,7 +276,7 @@ class State:
             'tags': [
                 f'model:{model_name}',
                 f'agent:{agent_name}',
-                f'web_host:{os.environ.get("WEB_HOST", "unspecified")}',
+                f'web_host:{_WEB_HOST}',
                 f'openhands_version:{openhands.__version__}',
             ],
         }
