@@ -148,7 +148,7 @@ class ProviderHandler:
 
     def get_service(self, provider: ProviderType) -> GitService:
         """Helper method to instantiate a service for a given provider"""
-        token = self.provider_tokens[provider]
+        token = self._provider_tokens[provider]
         service_class = self.service_class_map[provider]
         return service_class(
             user_id=token.user_id,
@@ -702,3 +702,7 @@ class ProviderHandler:
             )
             # If we can't determine the PR status, include the conversation to be safe
             return True
+
+    @property
+    def provider_tokens(self) -> PROVIDER_TOKEN_TYPE:
+        return self._provider_tokens
