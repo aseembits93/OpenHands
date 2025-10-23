@@ -10,7 +10,11 @@ from openai import OpenAI
 # AFTER the agentskills is imported (the case for DockerRuntime)
 # ==================================================================================================
 def _get_openai_api_key() -> str:
-    return os.getenv('OPENAI_API_KEY', os.getenv('SANDBOX_ENV_OPENAI_API_KEY', ''))
+    environ = os.environ
+    try:
+        return environ['OPENAI_API_KEY']
+    except KeyError:
+        return environ.get('SANDBOX_ENV_OPENAI_API_KEY', '')
 
 
 def _get_openai_base_url() -> str:
