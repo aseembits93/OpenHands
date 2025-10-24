@@ -45,6 +45,14 @@ from openhands.events.event import FileEditSource, FileReadSource
 from openhands.events.tool import ToolCallMetadata
 from openhands.llm.tool_names import TASK_TRACKER_TOOL_NAME
 
+_CMD_RUN_TOOL_NAME = create_cmd_run_tool()['function']['name']
+
+_STR_REPLACE_EDITOR_TOOL_NAME = create_str_replace_editor_tool()['function']['name']
+
+_STR_REPLACE_EDITOR_VALID_PARAMS = set(
+    create_str_replace_editor_tool()['function']['parameters']['properties'].keys()
+)
+
 
 def combine_thought(action: Action, thought: str) -> Action:
     if not hasattr(action, 'thought'):
@@ -59,15 +67,16 @@ def combine_thought(action: Action, thought: str) -> Action:
 def set_security_risk(action: Action, arguments: dict) -> None:
     """Set the security risk level for the action."""
 
-    # Set security_risk attribute if provided
-    if 'security_risk' in arguments:
-        if arguments['security_risk'] in RISK_LEVELS:
+    sec_val = arguments.get('security_risk')
+    if sec_val is not None:
+        if sec_val in RISK_LEVELS:
             if hasattr(action, 'security_risk'):
                 action.security_risk = getattr(
-                    ActionSecurityRisk, arguments['security_risk']
+                    ActionSecurityRisk, sec_val
                 )
         else:
-            logger.warning(f'Invalid security_risk value: {arguments["security_risk"]}')
+            # Only log if wrong value supplied, not on every call
+            logger.warning(f'Invalid security_risk value: {sec_val}')
 
 
 def response_to_actions(
@@ -89,7 +98,6 @@ def response_to_actions(
 
         # Process each tool call to OpenHands action
         for i, tool_call in enumerate(assistant_msg.tool_calls):
-            action: Action
             logger.debug(f'Tool call in function_calling.py: {tool_call}')
             try:
                 arguments = json.loads(tool_call.function.arguments)
@@ -98,20 +106,17 @@ def response_to_actions(
                     f'Failed to parse tool call arguments: {tool_call.function.arguments}'
                 ) from e
 
-            # ================================================
-            # CmdRunTool (Bash)
-            # ================================================
+            action: Action
+            func_name = tool_call.function.name
 
-            if tool_call.function.name == create_cmd_run_tool()['function']['name']:
+            if func_name == _CMD_RUN_TOOL_NAME:
                 if 'command' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "command" in tool call {tool_call.function.name}'
+                        f'Missing required argument "command" in tool call {func_name}'
                     )
-                # convert is_input to boolean
                 is_input = arguments.get('is_input', 'false') == 'true'
                 action = CmdRunAction(command=arguments['command'], is_input=is_input)
 
-                # Set hard timeout if provided
                 if 'timeout' in arguments:
                     try:
                         action.set_hard_timeout(float(arguments['timeout']))
@@ -121,45 +126,33 @@ def response_to_actions(
                         ) from e
                 set_security_risk(action, arguments)
 
-            # ================================================
-            # IPythonTool (Jupyter)
-            # ================================================
-            elif tool_call.function.name == IPythonTool['function']['name']:
+            elif func_name == IPythonTool['function']['name']:
                 if 'code' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "code" in tool call {tool_call.function.name}'
+                        f'Missing required argument "code" in tool call {func_name}'
                     )
                 action = IPythonRunCellAction(code=arguments['code'])
                 set_security_risk(action, arguments)
 
-            # ================================================
-            # AgentDelegateAction (Delegation to another agent)
-            # ================================================
-            elif tool_call.function.name == 'delegate_to_browsing_agent':
+            elif func_name == 'delegate_to_browsing_agent':
                 action = AgentDelegateAction(
                     agent='BrowsingAgent',
                     inputs=arguments,
                 )
 
-            # ================================================
-            # AgentFinishAction
-            # ================================================
-            elif tool_call.function.name == FinishTool['function']['name']:
+            elif func_name == FinishTool['function']['name']:
                 action = AgentFinishAction(
                     final_thought=arguments.get('message', ''),
                 )
 
-            # ================================================
-            # LLMBasedFileEditTool (LLM-based file editor, deprecated)
-            # ================================================
-            elif tool_call.function.name == LLMBasedFileEditTool['function']['name']:
+            elif func_name == LLMBasedFileEditTool['function']['name']:
                 if 'path' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "path" in tool call {tool_call.function.name}'
+                        f'Missing required argument "path" in tool call {func_name}'
                     )
                 if 'content' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "content" in tool call {tool_call.function.name}'
+                        f'Missing required argument "content" in tool call {func_name}'
                     )
                 action = FileEditAction(
                     path=arguments['path'],
@@ -170,17 +163,14 @@ def response_to_actions(
                         'impl_source', FileEditSource.LLM_BASED_EDIT
                     ),
                 )
-            elif (
-                tool_call.function.name
-                == create_str_replace_editor_tool()['function']['name']
-            ):
+            elif func_name == _STR_REPLACE_EDITOR_TOOL_NAME:
                 if 'command' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "command" in tool call {tool_call.function.name}'
+                        f'Missing required argument "command" in tool call {func_name}'
                     )
                 if 'path' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "path" in tool call {tool_call.function.name}'
+                        f'Missing required argument "path" in tool call {func_name}'
                     )
                 path = arguments['path']
                 command = arguments['command']
@@ -196,27 +186,17 @@ def response_to_actions(
                     )
                 else:
                     if 'view_range' in other_kwargs:
-                        # Remove view_range from other_kwargs since it is not needed for FileEditAction
                         other_kwargs.pop('view_range')
 
-                    # Filter out unexpected arguments
                     valid_kwargs_for_editor = {}
-                    # Get valid parameters from the str_replace_editor tool definition
-                    str_replace_editor_tool = create_str_replace_editor_tool()
-                    valid_params = set(
-                        str_replace_editor_tool['function']['parameters'][
-                            'properties'
-                        ].keys()
-                    )
 
                     for key, value in other_kwargs.items():
-                        if key in valid_params:
-                            # security_risk is valid but should NOT be part of editor kwargs
+                        if key in _STR_REPLACE_EDITOR_VALID_PARAMS:
                             if key != 'security_risk':
                                 valid_kwargs_for_editor[key] = value
                         else:
                             raise FunctionCallValidationError(
-                                f'Unexpected argument {key} in tool call {tool_call.function.name}. Allowed arguments are: {valid_params}'
+                                f'Unexpected argument {key} in tool call {func_name}. Allowed arguments are: {_STR_REPLACE_EDITOR_VALID_PARAMS}'
                             )
 
                     action = FileEditAction(
@@ -227,40 +207,29 @@ def response_to_actions(
                     )
 
                 set_security_risk(action, arguments)
-            # ================================================
-            # AgentThinkAction
-            # ================================================
-            elif tool_call.function.name == ThinkTool['function']['name']:
+
+            elif func_name == ThinkTool['function']['name']:
                 action = AgentThinkAction(thought=arguments.get('thought', ''))
 
-            # ================================================
-            # CondensationRequestAction
-            # ================================================
-            elif tool_call.function.name == CondensationRequestTool['function']['name']:
+            elif func_name == CondensationRequestTool['function']['name']:
                 action = CondensationRequestAction()
 
-            # ================================================
-            # BrowserTool
-            # ================================================
-            elif tool_call.function.name == BrowserTool['function']['name']:
+            elif func_name == BrowserTool['function']['name']:
                 if 'code' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "code" in tool call {tool_call.function.name}'
+                        f'Missing required argument "code" in tool call {func_name}'
                     )
                 action = BrowseInteractiveAction(browser_actions=arguments['code'])
                 set_security_risk(action, arguments)
 
-            # ================================================
-            # TaskTrackingAction
-            # ================================================
-            elif tool_call.function.name == TASK_TRACKER_TOOL_NAME:
+            elif func_name == TASK_TRACKER_TOOL_NAME:
                 if 'command' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "command" in tool call {tool_call.function.name}'
+                        f'Missing required argument "command" in tool call {func_name}'
                     )
                 if arguments['command'] == 'plan' and 'task_list' not in arguments:
                     raise FunctionCallValidationError(
-                        f'Missing required argument "task_list" for "plan" command in tool call {tool_call.function.name}'
+                        f'Missing required argument "task_list" for "plan" command in tool call {func_name}'
                     )
 
                 raw_task_list = arguments.get('task_list', [])
@@ -269,7 +238,6 @@ def response_to_actions(
                         f'Invalid format for "task_list". Expected a list but got {type(raw_task_list)}.'
                     )
 
-                # Normalize task_list to ensure it's always a list of dictionaries
                 normalized_task_list = []
                 for i, task in enumerate(raw_task_list):
                     if isinstance(task, dict):
@@ -281,7 +249,6 @@ def response_to_actions(
                             'notes': task.get('notes', ''),
                         }
                     else:
-                        # Unexpected format, raise validation error
                         logger.warning(
                             f'Unexpected task format in task_list: {type(task)} - {task}'
                         )
@@ -295,26 +262,21 @@ def response_to_actions(
                     task_list=normalized_task_list,
                 )
 
-            # ================================================
-            # MCPAction (MCP)
-            # ================================================
-            elif mcp_tool_names and tool_call.function.name in mcp_tool_names:
+            elif mcp_tool_names and func_name in mcp_tool_names:
                 action = MCPAction(
-                    name=tool_call.function.name,
+                    name=func_name,
                     arguments=arguments,
                 )
             else:
                 raise FunctionCallNotExistsError(
-                    f'Tool {tool_call.function.name} is not registered. (arguments: {arguments}). Please check the tool name and retry with an existing tool.'
+                    f'Tool {func_name} is not registered. (arguments: {arguments}). Please check the tool name and retry with an existing tool.'
                 )
 
-            # We only add thought to the first action
             if i == 0:
                 action = combine_thought(action, thought)
-            # Add metadata for tool calling
             action.tool_call_metadata = ToolCallMetadata(
                 tool_call_id=tool_call.id,
-                function_name=tool_call.function.name,
+                function_name=func_name,
                 model_response=response,
                 total_calls_in_response=len(assistant_msg.tool_calls),
             )
@@ -327,10 +289,6 @@ def response_to_actions(
             )
         )
 
-    # Add response id to actions
-    # This will ensure we can match both actions without tool calls (e.g. MessageAction)
-    # and actions with tool calls (e.g. CmdRunAction, IPythonRunCellAction, etc.)
-    # with the token usage data
     for action in actions:
         action.response_id = response.id
 
