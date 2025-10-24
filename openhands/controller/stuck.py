@@ -233,12 +233,24 @@ class StuckDetector:
 
         for obs in observations:
             content = obs.content
-            lines = content.strip().split('\n')
-
-            if len(lines) < 3:
+            content_stripped = content.strip()
+            
+            # Find the last three lines using rfind for better performance
+            idx2 = content_stripped.rfind('\n')
+            if idx2 == -1:
                 return False
-
-            last_lines = lines[-3:]
+            idx1 = content_stripped.rfind('\n', 0, idx2)
+            if idx1 == -1:
+                return False
+            idx0 = content_stripped.rfind('\n', 0, idx1)
+            if idx0 == -1:
+                return False
+            
+            last_lines = [
+                content_stripped[idx0+1:idx1],
+                content_stripped[idx1+1:idx2], 
+                content_stripped[idx2+1:]
+            ]
 
             # Check if the last two lines are our own
             if not (
