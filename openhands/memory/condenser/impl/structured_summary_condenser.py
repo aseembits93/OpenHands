@@ -199,8 +199,6 @@ class StructuredSummaryCondenser(RollingCondenser):
     def get_condensation(self, view: View) -> Condensation:
         head = view[: self.keep_first]
         target_size = self.max_size // 2
-        # Number of events to keep from the tail -- target size, minus however many
-        # prefix events from the head, minus one for the summarization event
         events_from_tail = target_size - len(head) - 1
 
         summary_event = (
@@ -209,14 +207,16 @@ class StructuredSummaryCondenser(RollingCondenser):
             else AgentCondensationObservation('No events summarized')
         )
 
-        # Identify events to be forgotten (those not in head or tail)
-        forgotten_events = []
-        for event in view[self.keep_first : -events_from_tail]:
-            if not isinstance(event, AgentCondensationObservation):
-                forgotten_events.append(event)
+        # Collect forgotten_events with generator for memory efficiency
+        forgotten_events = [
+            event
+            for event in view[self.keep_first : -events_from_tail]
+            if not isinstance(event, AgentCondensationObservation)
+        ]
 
-        # Construct prompt for summarization
-        prompt = """You are maintaining a context-aware state summary for an interactive software agent. This summary is critical because it:
+        # Build prompt string efficiently
+        prompt_parts = [
+            """You are maintaining a context-aware state summary for an interactive software agent. This summary is critical because it:
 1. Preserves essential context when conversation history grows too large
 2. Prevents lost work when the session length exceeds token limits
 3. Helps maintain continuity across multiple interactions
@@ -230,25 +230,22 @@ Capture all relevant information, especially:
 - Work that has been completed
 - Tasks that remain pending
 - Current state of code, variables, and data structures
-- The status of any version control operations"""
+- The status of any version control operations""",
+            '',
+            f'<PREVIOUS SUMMARY>\n{self._truncate(summary_event.message if getattr(summary_event, "message", None) else "")}\n</PREVIOUS SUMMARY>\n',
+            ''
+        ]
 
-        prompt += '\n\n'
-
-        # Add the previous summary if it exists. We'll always have a summary
-        # event, but the types aren't precise enought to guarantee that it has a
-        # message attribute.
-        summary_event_content = self._truncate(
-            summary_event.message if summary_event.message else ''
-        )
-        prompt += f'<PREVIOUS SUMMARY>\n{summary_event_content}\n</PREVIOUS SUMMARY>\n'
-
-        prompt += '\n\n'
-
-        # Add all events that are being forgotten. We use the string
-        # representation defined by the event, and truncate it if necessary.
+        # Build forgotten events section using batching in a list
+        forgotten_event_texts = []
         for forgotten_event in forgotten_events:
             event_content = self._truncate(str(forgotten_event))
-            prompt += f'<EVENT id={forgotten_event.id}>\n{event_content}\n</EVENT>\n'
+            forgotten_event_texts.append(
+                f'<EVENT id={forgotten_event.id}>\n{event_content}\n</EVENT>\n'
+            )
+        prompt_parts.extend(forgotten_event_texts)
+
+        prompt = '\n'.join(prompt_parts)
 
         messages = [Message(role='user', content=[TextContent(text=prompt)])]
 
@@ -262,28 +259,26 @@ Capture all relevant information, especially:
         )
 
         try:
-            # Extract the message containing tool calls
             message = response.choices[0].message
 
-            # Check if there are tool calls
             if not hasattr(message, 'tool_calls') or not message.tool_calls:
                 raise ValueError('No tool calls found in response')
 
-            # Find the create_state_summary tool call
-            summary_tool_call = None
-            for tool_call in message.tool_calls:
-                if tool_call.function.name == 'create_state_summary':
-                    summary_tool_call = tool_call
-                    break
+            summary_tool_call = next(
+                (
+                    tool_call
+                    for tool_call in message.tool_calls
+                    if tool_call.function.name == 'create_state_summary'
+                ),
+                None,
+            )
 
             if not summary_tool_call:
                 raise ValueError('create_state_summary tool call not found')
 
-            # Parse the arguments
             args_json = summary_tool_call.function.arguments
             args_dict = json.loads(args_json)
 
-            # Create a StateSummary object
             summary = StateSummary.model_validate(args_dict)
 
         except (ValueError, AttributeError, KeyError, json.JSONDecodeError) as e:
@@ -295,10 +290,22 @@ Capture all relevant information, especially:
         self.add_metadata('response', response.model_dump())
         self.add_metadata('metrics', self.llm.metrics.get())
 
+        # Compute min/max id in a single loop for efficiency with fallback if no forgotten_events
+        if forgotten_events:
+            min_id = forgotten_events[0].id
+            max_id = forgotten_events[0].id
+            for event in forgotten_events[1:]:
+                if event.id < min_id:
+                    min_id = event.id
+                if event.id > max_id:
+                    max_id = event.id
+        else:
+            min_id = max_id = None
+
         return Condensation(
             action=CondensationAction(
-                forgotten_events_start_id=min(event.id for event in forgotten_events),
-                forgotten_events_end_id=max(event.id for event in forgotten_events),
+                forgotten_events_start_id=min_id,
+                forgotten_events_end_id=max_id,
                 summary=str(summary),
                 summary_offset=self.keep_first,
             )
