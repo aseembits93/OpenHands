@@ -32,16 +32,23 @@ def _compress_chunks(
     def_dict = {}
     id = 0
 
+    skip_set = set(skip_list)
+
     # Store items that occur more than once in a dictionary
     for item, count in counter.items():
-        if count > 1 and item not in skip_list and len(item) > 10:
+        if count > 1 and item not in skip_set and len(item) > 10:
             def_dict[f'{identifier}-{id}'] = item
             id += 1
 
-    # Replace redundant items with their identifiers in the text
-    compressed_text = '\n'.join(text_list)
-    for key, value in def_dict.items():
-        compressed_text = compressed_text.replace(value, key)
+    if not def_dict:
+        return def_dict, '\n'.join(text_list)
+
+    # Replace redundant items with their identifiers using dictionary lookup
+    value_to_key = {v: k for k, v in def_dict.items()}
+    compressed_text_chunks = [
+        value_to_key.get(chunk, chunk) for chunk in text_list
+    ]
+    compressed_text = '\n'.join(compressed_text_chunks)
 
     return def_dict, compressed_text
 
