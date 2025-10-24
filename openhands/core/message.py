@@ -86,9 +86,13 @@ class Message(BaseModel):
 
     def _string_serializer(self) -> dict[str, Any]:
         # convert content to a single string
-        content = '\n'.join(
-            item.text for item in self.content if isinstance(item, TextContent)
-        )
+        if self.content:
+            content = '\n'.join(
+                item.text for item in self.content if isinstance(item, TextContent)
+            )
+        else:
+            content = ""
+
         message_dict: dict[str, Any] = {'content': content, 'role': self.role}
 
         # add tool call keys if we have a tool call or response
@@ -97,28 +101,33 @@ class Message(BaseModel):
     def _list_serializer(self) -> dict[str, Any]:
         content: list[dict[str, Any]] = []
         role_tool_with_prompt_caching = False
+        vision_enabled = self.vision_enabled
+        role_is_tool = self.role == 'tool'
         for item in self.content:
             d = item.model_dump()
             # We have to remove cache_prompt for tool content and move it up to the message level
             # See discussion here for details: https://github.com/BerriAI/litellm/issues/6422#issuecomment-2438765472
-            if self.role == 'tool' and item.cache_prompt:
+            if role_is_tool and getattr(item, 'cache_prompt', False):
                 role_tool_with_prompt_caching = True
                 if isinstance(item, TextContent):
+                    # Only pop once if it's already a dict
                     d.pop('cache_control', None)
                 elif isinstance(item, ImageContent):
                     # ImageContent.model_dump() always returns a list
-                    # We know d is a list of dicts for ImageContent
-                    if hasattr(d, '__iter__'):
+                    if isinstance(d, list):
+                        # Remove cache_control from every dict in the list
                         for d_item in d:
-                            if hasattr(d_item, 'pop'):
+                            if isinstance(d_item, dict):
                                 d_item.pop('cache_control', None)
 
             if isinstance(item, TextContent):
                 content.append(d)
-            elif isinstance(item, ImageContent) and self.vision_enabled:
+            elif isinstance(item, ImageContent) and vision_enabled:
                 # ImageContent.model_dump() always returns a list
-                # We know d is a list for ImageContent
-                content.extend([d] if isinstance(d, dict) else d)
+                if isinstance(d, dict):
+                    content.append(d)
+                elif isinstance(d, list):
+                    content.extend(d)
 
         message_dict: dict[str, Any] = {'content': content, 'role': self.role}
 
