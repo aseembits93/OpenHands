@@ -17,6 +17,11 @@ from openhands.core.logger import openhands_logger as logger
 from openhands.runtime.builder import DockerRuntimeBuilder, RuntimeBuilder
 from openhands.version import get_version
 
+# Cache the Jinja2 Environment and Template to avoid reloading from disk on each call.
+# This improves performance significantly as the expensive get_template operation is only performed once.
+_env: Environment | None = None
+_template: object | None = None
+
 
 class BuildFromImageType(Enum):
     SCRATCH = 'scratch'  # Slowest: Build from base image (no dependencies are reused)
@@ -45,12 +50,7 @@ def _generate_dockerfile(
     Returns:
     - str: The resulting Dockerfile content
     """
-    env = Environment(
-        loader=FileSystemLoader(
-            searchpath=os.path.join(os.path.dirname(__file__), 'runtime_templates')
-        )
-    )
-    template = env.get_template('Dockerfile.j2')
+    template = _get_cached_template()
 
     dockerfile_content = template.render(
         base_image=base_image,
@@ -389,6 +389,16 @@ def _build_sandbox_image(
         raise AgentRuntimeBuildError(f'Build failed for image {names}')
 
     return image_name
+
+def _get_cached_template() -> object:
+    global _env, _template
+    if _template is None:
+        if _env is None:
+            # Compute the template path just once
+            searchpath = os.path.join(os.path.dirname(__file__), 'runtime_templates')
+            _env = Environment(loader=FileSystemLoader(searchpath))
+        _template = _env.get_template('Dockerfile.j2')
+    return _template
 
 
 if __name__ == '__main__':
