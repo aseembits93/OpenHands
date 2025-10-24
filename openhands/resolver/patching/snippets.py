@@ -15,14 +15,8 @@ def remove(path: str) -> None:
 
 # find all indices of a list of strings that match a regex
 def findall_regex(items: list[str], regex: re.Pattern[str]) -> list[int]:
-    found = list()
-    for i in range(0, len(items)):
-        k = regex.match(items[i])
-        if k:
-            found.append(i)
-            k = None
-
-    return found
+    # Use enumerate for direct indexed iteration and avoid extra variables
+    return [i for i, item in enumerate(items) if regex.match(item)]
 
 
 def split_by_regex(items: list[str], regex: re.Pattern[str]) -> list[list[str]]:

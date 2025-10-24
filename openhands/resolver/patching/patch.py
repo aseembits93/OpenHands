@@ -163,9 +163,11 @@ def parse_diff_header(text: str | list[str]) -> header | None:
     ]
 
     for regex, parser in check:
-        diffs = findall_regex(lines, regex)
-        if len(diffs) > 0:
-            return parser(lines)
+        # Early exit if a match is found, avoiding unnecessary function calls
+        for i, line in enumerate(lines):
+            if regex.match(line):
+                return parser(lines)
+        # If not found, don't call findall_regex unnecessarily
 
     return None  # no header?
 
