@@ -18,13 +18,10 @@ class ObservationMaskingCondenser(Condenser):
 
     def condense(self, view: View) -> View | Condensation:
         """Replace the content of observations outside of the attention window with a placeholder."""
-        results: list[Event] = []
-        for i, event in enumerate(view):
-            if isinstance(event, Observation) and i < len(view) - self.attention_window:
-                results.append(AgentCondensationObservation('<MASKED>'))
-            else:
-                results.append(event)
-
+        # Compute cutoff once for faster access
+        cutoff = max(len(view) - self.attention_window, 0)
+        results: list[Event] = [AgentCondensationObservation('<MASKED>') if isinstance(event, Observation) and i < cutoff else event
+                                for i, event in enumerate(view)]
         return View(events=results)
 
     @classmethod
