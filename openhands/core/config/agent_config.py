@@ -98,7 +98,7 @@ class AgentConfig(BaseModel):
             dict[str, AgentConfig]: A mapping where the key "agent" corresponds to the default configuration
             and additional keys represent custom configurations.
         """
-        # Initialize the result mapping
+
         agent_mapping: dict[str, AgentConfig] = {}
 
         # Extract base config data (non-dict values)
@@ -113,46 +113,79 @@ class AgentConfig(BaseModel):
         # Try to create the base config
         try:
             base_config = cls.model_validate(base_data)
-            agent_mapping['agent'] = base_config
         except ValidationError as e:
-            logger.warning(f'Invalid base agent configuration: {e}. Using defaults.')
-            # If base config fails, create a default one
+            logger.warning(
+                "Invalid base agent configuration. Using defaults."
+            )
             base_config = cls()
-            # Still add it to the mapping
-            agent_mapping['agent'] = base_config
+        agent_mapping['agent'] = base_config
 
-        # Process each custom section independently
+        # Pre-dump base config for override merging, to avoid repeated model_dump
+        base_config_dump = base_config.model_dump()
+
+        # Cache Agent class (import only if needed) and config models for quick lookup
+        _Agent = None
+        config_model_cache = {}
+
+        # Only import Agent if any section might need it (classpath or classname path)
+        import_agent_needed = any(
+            overrides.get('classpath') or True
+            for overrides in custom_sections.values()
+        )
+        if import_agent_needed:
+            try:
+                from openhands.controller.agent import Agent
+                _Agent = Agent
+            except Exception:
+                _Agent = None
+
         for name, overrides in custom_sections.items():
             try:
-                # Merge base config with overrides
-                merged = {**base_config.model_dump(), **overrides}
-                if merged.get('classpath'):
-                    # if an explicit classpath is given, try to load it and look up its config model class
-                    from openhands.controller.agent import Agent
+                # Avoid dictionary unpacking, merge efficiently
+                merged = base_config_dump.copy()
+                merged.update(overrides)
 
+                custom_config = None
+                # Try fast path via classpath if specified
+                if merged.get('classpath') and _Agent is not None:
+                    agent_cls = None
                     try:
-                        agent_cls = get_impl(Agent, merged.get('classpath'))
-                        custom_config = agent_cls.config_model.model_validate(merged)
+                        agent_cls = get_impl(_Agent, merged.get('classpath'))
+                        config_model = config_model_cache.get(agent_cls)
+                        if config_model is None:
+                            config_model = getattr(agent_cls, 'config_model', None)
+                            config_model_cache[agent_cls] = config_model
+                        custom_config = config_model.model_validate(merged)
                     except Exception as e:
                         logger.warning(
-                            f'Failed to load custom agent class [{merged.get("classpath")}]: {e}. Using default config model.'
+                            "Failed to load custom agent class for classpath '%s'. Using default config model.", 
+                            merged.get("classpath")
                         )
-                        custom_config = cls.model_validate(merged)
-                else:
-                    # otherwise, try to look up the agent class by name (i.e. if it's a built-in)
-                    # if that fails, just use the default AgentConfig class.
+                elif _Agent is not None:
+                    # Try built-in Agent.get_cls
+                    agent_cls = None
                     try:
-                        agent_cls = Agent.get_cls(name)
-                        custom_config = agent_cls.config_model.model_validate(merged)
+                        agent_cls = _Agent.get_cls(name)
+                        config_model = config_model_cache.get(agent_cls)
+                        if config_model is None:
+                            config_model = getattr(agent_cls, 'config_model', None)
+                            config_model_cache[agent_cls] = config_model
+                        custom_config = config_model.model_validate(merged)
                     except Exception:
-                        # otherwise, just fall back to the default config model
-                        custom_config = cls.model_validate(merged)
+                        # fallback below
+                        custom_config = None
+
+                # fallback to default config
+                if custom_config is None:
+                    custom_config = cls.model_validate(merged)
+
                 agent_mapping[name] = custom_config
+
             except ValidationError as e:
                 logger.warning(
-                    f'Invalid agent configuration for [{name}]: {e}. This section will be skipped.'
+                    "Invalid agent configuration for section '%s'. This section will be skipped.", 
+                    name
                 )
-                # Skip this custom section but continue with others
                 continue
 
         return agent_mapping
