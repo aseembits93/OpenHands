@@ -120,20 +120,15 @@ def parse_scm_header(text: str | list[str]) -> header | None:
     ]
 
     for regex, parser in check:
-        diffs = findall_regex(lines, regex)
-        if len(diffs) > 0:
-            git_opt = findall_regex(lines, git_diffcmd_header)
-            if len(git_opt) > 0:
+        if any(regex.match(line) for line in lines):
+            if any(git_diffcmd_header.match(line) for line in lines):
                 res = parser(lines)
                 if res:
-                    old_path = res.old_path
-                    new_path = res.new_path
+                    old_path, new_path = res.old_path, res.new_path
                     if old_path.startswith('a/'):
                         old_path = old_path[2:]
-
                     if new_path.startswith('b/'):
                         new_path = new_path[2:]
-
                     return header(
                         index_path=res.index_path,
                         old_path=old_path,
@@ -143,9 +138,7 @@ def parse_scm_header(text: str | list[str]) -> header | None:
                     )
             else:
                 res = parser(lines)
-
             return res
-
     return None
 
 
