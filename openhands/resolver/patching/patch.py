@@ -510,19 +510,19 @@ def parse_default_diff(text: str | list[str]) -> list[Change] | None:
     r = 0
     i = 0
 
-    changes = list()
+    changes = []
 
     hunks = split_by_regex(lines, default_hunk_start)
     for hunk_n, hunk in enumerate(hunks):
-        if not len(hunk):
+        if not hunk:
             continue
 
         r = 0
         i = 0
-        while len(hunk) > 0:
+        while hunk:
             h = default_hunk_start.match(hunk[0])
             c = default_change.match(hunk[0])
-            del hunk[0]
+            hunk.pop(0)
             if h:
                 old = int(h.group(1))
                 if len(h.group(2)) > 0:
@@ -547,7 +547,7 @@ def parse_default_diff(text: str | list[str]) -> list[Change] | None:
                     changes.append(Change(None, new + i, line, hunk_n))
                     i += 1
 
-    if len(changes) > 0:
+    if changes:
         return changes
 
     return None
