@@ -76,11 +76,11 @@ THE FOLLOWING ARE THE ORIGINAL FILE CONTENTS AND THE ERROR INFORMATION REPORTED 
 
 def _extract_code(string: str) -> str | None:
     pattern = r'<updated_code>(.*?)</updated_code>'
-    matches = re.findall(pattern, string, re.DOTALL)
-    if not matches:
+    match = re.search(pattern, string, re.DOTALL)
+    if not match:
         return None
 
-    content = str(matches[0])
+    content = match.group(1)
     if content.startswith('#EDIT:'):
         # Remove first line
         content = content[content.find('\n') + 1 :]
