@@ -18,6 +18,7 @@ Note:
 """
 
 import os
+import sys
 
 from openhands.linter import DefaultLinter, LintResult
 
@@ -34,7 +35,7 @@ LINTER_ERROR_MSG = '[Your proposed edit has introduced new syntax error(s). Plea
 
 
 def _output_error(error_msg: str) -> bool:
-    print(f'ERROR: {error_msg}')
+    sys.stdout.write(f'ERROR: {error_msg}\n')
     return False
 
 
