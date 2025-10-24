@@ -156,15 +156,13 @@ def parse_diff_header(text: str | list[str]) -> header | None:
         (unified_header_new_line, parse_unified_header),
         (context_header_old_line, parse_context_header),
         (diffcmd_header, parse_diffcmd_header),
-        # TODO:
-        # git_header can handle version-less unified headers, but
-        # will trim a/ and b/ in the paths if they exist...
         (git_header_new_line, parse_git_header),
     ]
 
+    # Find header only if its regex matches at least one line (short-circuit early)
     for regex, parser in check:
-        diffs = findall_regex(lines, regex)
-        if len(diffs) > 0:
+        idx = _first_match_index(lines, regex)
+        if idx is not None:
             return parser(lines)
 
     return None  # no header?
@@ -267,8 +265,8 @@ def parse_git_header(text: str | list[str]) -> header | None:
 def parse_svn_header(text: str | list[str]) -> header | None:
     lines = text.splitlines() if isinstance(text, str) else text
 
-    headers = findall_regex(lines, svn_header_index)
-    if len(headers) == 0:
+    idx = _first_match_index(lines, svn_header_index)
+    if idx is None:
         return None
 
     while len(lines) > 0:
@@ -975,3 +973,9 @@ def parse_git_binary_diff(text: str | list[str]) -> list[Change] | None:
                 old_encoded = ''
 
     return changes
+
+def _first_match_index(items: list[str], regex: re.Pattern[str]) -> int | None:
+    for i, item in enumerate(items):
+        if regex.match(item):
+            return i
+    return None
