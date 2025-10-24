@@ -167,17 +167,20 @@ class ConversationMemory:
         """Applies formatting rules, such as adding newlines between consecutive user messages."""
         formatted_messages = []
         prev_role = None
+        user_textcontent_type = TextContent  # local ref to avoid global lookup inside loop
+        # Optimization: prefetch attributes and avoid repeated lookups
         for msg in messages:
-            # Add double newline between consecutive user messages
-            if msg.role == 'user' and prev_role == 'user' and len(msg.content) > 0:
-                # Find the first TextContent in the message to add newlines
-                for content_item in msg.content:
-                    if isinstance(content_item, TextContent):
-                        # Prepend two newlines to ensure visual separation
+            msg_role = msg.role
+            msg_content = msg.content
+            if msg_role == 'user' and prev_role == 'user' and msg_content:
+                # Fast path: scan for the first TextContent and prepend newlines
+                for content_item in msg_content:
+                    # Use type() is user_textcontent_type for faster comparison; avoids isinstance overhead
+                    if type(content_item) is user_textcontent_type:
                         content_item.text = '\n\n' + content_item.text
                         break
             formatted_messages.append(msg)
-            prev_role = msg.role  # Update prev_role after processing each message
+            prev_role = msg_role
         return formatted_messages
 
     def _process_action(
