@@ -11,6 +11,18 @@ from prompt_toolkit.formatted_text import HTML
 
 from openhands import __version__
 
+_HTML_DOCKER_NOT_INSTALLED = HTML('<ansired>❌ Docker is not installed or not in PATH.</ansired>')
+
+_HTML_INSTALL_DOCKER = HTML(
+    '<grey>Please install Docker first: https://docs.docker.com/get-docker/</grey>'
+)
+
+_HTML_DOCKER_DAEMON_NOT_RUNNING = HTML('<ansired>❌ Docker daemon is not running.</ansired>')
+
+_HTML_START_DOCKER = HTML('<grey>Please start Docker and try again.</grey>')
+
+_HTML_DOCKER_STATUS_FAILED = HTML('<ansired>❌ Failed to check Docker status.</ansired>')
+
 
 def _format_docker_command_for_logging(cmd: list[str]) -> str:
     """Format a Docker command for logging with grey color.
@@ -31,35 +43,28 @@ def check_docker_requirements() -> bool:
     Returns:
         bool: True if Docker is available and running, False otherwise.
     """
-    # Check if Docker is installed
-    if not shutil.which('docker'):
-        print_formatted_text(
-            HTML('<ansired>❌ Docker is not installed or not in PATH.</ansired>')
-        )
-        print_formatted_text(
-            HTML(
-                '<grey>Please install Docker first: https://docs.docker.com/get-docker/</grey>'
-            )
-        )
+    docker_path = shutil.which('docker')
+    if not docker_path:
+        print_formatted_text(_HTML_DOCKER_NOT_INSTALLED)
+        print_formatted_text(_HTML_INSTALL_DOCKER)
         return False
 
-    # Check if Docker daemon is running
+    # Use try/except only for the subprocess call
     try:
+        # Avoid creating a new process to check PATH and avoid recreating argument list
         result = subprocess.run(
-            ['docker', 'info'], capture_output=True, text=True, timeout=10
+            (docker_path, 'info'),  # Use found docker_path instead of just 'docker'
+            capture_output=True,
+            text=True,
+            timeout=10
         )
         if result.returncode != 0:
-            print_formatted_text(
-                HTML('<ansired>❌ Docker daemon is not running.</ansired>')
-            )
-            print_formatted_text(
-                HTML('<grey>Please start Docker and try again.</grey>')
-            )
+            print_formatted_text(_HTML_DOCKER_DAEMON_NOT_RUNNING)
+            print_formatted_text(_HTML_START_DOCKER)
             return False
     except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
-        print_formatted_text(
-            HTML('<ansired>❌ Failed to check Docker status.</ansired>')
-        )
+        print_formatted_text(_HTML_DOCKER_STATUS_FAILED)
+        # Only compile HTML here since error message is dynamic
         print_formatted_text(HTML(f'<grey>Error: {e}</grey>'))
         return False
 
