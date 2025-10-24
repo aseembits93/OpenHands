@@ -8,9 +8,7 @@ class InMemoryFileStore(FileStore):
     files: dict[str, str]
 
     def __init__(self, files: dict[str, str] | None = None) -> None:
-        self.files = {}
-        if files is not None:
-            self.files = files
+        self.files = files if files is not None else {}
 
     def write(self, path: str, contents: str | bytes) -> None:
         if isinstance(contents, bytes):
@@ -18,9 +16,10 @@ class InMemoryFileStore(FileStore):
         self.files[path] = contents
 
     def read(self, path: str) -> str:
-        if path not in self.files:
+        try:
+            return self.files[path]
+        except KeyError:
             raise FileNotFoundError(path)
-        return self.files[path]
 
     def list(self, path: str) -> list[str]:
         files = []
