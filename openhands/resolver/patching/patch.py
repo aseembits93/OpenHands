@@ -475,11 +475,13 @@ def parse_context_header(text: str | list[str]) -> header | None:
         return None
 
     while len(lines) > 1:
-        o = context_header_old_line.match(lines[0])
-        del lines[0]
+        line_o = lines.pop(0)
+        o = context_header_old_line.match(line_o)
         if o:
-            n = context_header_new_line.match(lines[0])
-            del lines[0]
+            if not lines:
+                break
+            line_n = lines.pop(0)
+            n = context_header_new_line.match(line_n)
             if n:
                 over = o.group(2)
                 if len(over) == 0:
