@@ -14,6 +14,8 @@ from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.ioloop import PeriodicCallback
 from tornado.websocket import websocket_connect
 
+_ANSI_PATTERN = re.compile(r'\x1B\[\d+(;\d+){0,2}m')
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -45,8 +47,7 @@ def strip_ansi(o: str) -> str:
     'Lorem dolor sit ipsum'
     """
     # pattern = re.compile(r'/(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]/')
-    pattern = re.compile(r'\x1B\[\d+(;\d+){0,2}m')
-    stripped = pattern.sub('', o)
+    stripped = _ANSI_PATTERN.sub('', o)
     return stripped
 
 
