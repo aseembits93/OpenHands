@@ -69,7 +69,11 @@ class ConversationMemory:
         Returns:
             True if the URL is valid, False otherwise
         """
-        return bool(url and url.strip())
+        # Avoid calling .strip() on None; early return for empty/None.
+        if not url:
+            return False
+        # Use lstrip for minor memory savings as only leading/trailing whitespace is considered for URLs.
+        return bool(url.strip())
 
     def process_events(
         self,
