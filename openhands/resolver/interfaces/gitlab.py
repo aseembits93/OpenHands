@@ -91,11 +91,11 @@ class GitlabIssueHandler(IssueHandlerInterface):
 
         all_issues = self.download_issues()
         logger.info(f'Limiting resolving to issues {issue_numbers}.')
+        issue_numbers_set = set(issue_numbers)
         all_issues = [
             issue
             for issue in all_issues
-            # if issue['iid'] in issue_numbers and issue['merge_requests_count'] == 0
-            if issue['iid'] in issue_numbers  # TODO for testing
+            if issue['iid'] in issue_numbers_set  # TODO for testing
         ]
 
         if len(issue_numbers) == 1 and not all_issues:
@@ -139,24 +139,25 @@ class GitlabIssueHandler(IssueHandlerInterface):
         }
         all_issues = []
 
-        while True:
-            response = httpx.get(self.download_url, headers=self.headers, params=params)
-            response.raise_for_status()
-            issues = response.json()
+        with httpx.Client() as client:
+            while True:
+                response = client.get(self.download_url, headers=self.headers, params=params)
+                response.raise_for_status()
+                issues = response.json()
 
-            if not issues:
-                break
+                if not issues:
+                    break
 
-            if not isinstance(issues, list) or any(
-                [not isinstance(issue, dict) for issue in issues]
-            ):
-                raise ValueError(
-                    'Expected list of dictionaries from Service Gitlab API.'
-                )
+                if not isinstance(issues, list) or any(
+                    [not isinstance(issue, dict) for issue in issues]
+                ):
+                    raise ValueError(
+                        'Expected list of dictionaries from Service Gitlab API.'
+                    )
 
-            all_issues.extend(issues)
-            assert isinstance(params['page'], int)
-            params['page'] += 1
+                all_issues.extend(issues)
+                assert isinstance(params['page'], int)
+                params['page'] += 1
 
         return all_issues
 
@@ -168,29 +169,30 @@ class GitlabIssueHandler(IssueHandlerInterface):
         params = {'per_page': 100, 'page': 1}
         all_comments = []
 
-        while True:
-            response = httpx.get(url, headers=self.headers, params=params)
-            response.raise_for_status()
-            comments = response.json()
+        with httpx.Client() as client:
+            while True:
+                response = client.get(url, headers=self.headers, params=params)
+                response.raise_for_status()
+                comments = response.json()
 
-            if not comments:
-                break
+                if not comments:
+                    break
 
-            if comment_id:
-                matching_comment = next(
-                    (
-                        comment['body']
-                        for comment in comments
-                        if comment['id'] == comment_id
-                    ),
-                    None,
-                )
-                if matching_comment:
-                    return [matching_comment]
-            else:
-                all_comments.extend([comment['body'] for comment in comments])
+                if comment_id:
+                    matching_comment = next(
+                        (
+                            comment['body']
+                            for comment in comments
+                            if comment['id'] == comment_id
+                        ),
+                        None,
+                    )
+                    if matching_comment:
+                        return [matching_comment]
+                else:
+                    all_comments.extend([comment['body'] for comment in comments])
 
-            params['page'] += 1
+                params['page'] += 1
 
         return all_comments if all_comments else None
 
