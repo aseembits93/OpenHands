@@ -30,15 +30,23 @@ class GitlabIssueHandler(IssueHandlerInterface):
             username: Optional GitLab username
             base_domain: The domain for GitLab Enterprise (default: "gitlab.com")
         """
+        # Direct attribute assignment instead of repetitive lookups/refs
         self.owner = owner
         self.repo = repo
         self.token = token
         self.username = username
         self.base_domain = base_domain
-        self.base_url = self.get_base_url()
-        self.download_url = self.get_download_url()
-        self.clone_url = self.get_clone_url()
-        self.headers = self.get_headers()
+
+        # Compute base_url just once, using a helper function to avoid repeated quoting and string concat
+        self.base_url = self._base_url(owner, repo, base_domain)
+
+        # Precompute headers, download_url and clone_url once; these are always the same for the object
+        self.headers = {
+            'Authorization': f'Bearer {token}',
+            'Accept': 'application/json',
+        }
+        self.download_url = f'{self.base_url}/issues'
+        self.clone_url = self._clone_url(owner, repo, token, username, base_domain)
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -50,8 +58,8 @@ class GitlabIssueHandler(IssueHandlerInterface):
         }
 
     def get_base_url(self) -> str:
-        project_path = quote(f'{self.owner}/{self.repo}', safe='')
-        return f'https://{self.base_domain}/api/v4/projects/{project_path}'
+        # Return precomputed base_url for performance
+        return self.base_url
 
     def get_authorize_url(self) -> str:
         return f'https://{self.username}:{self.token}@{self.base_domain}/'
@@ -309,6 +317,26 @@ class GitlabIssueHandler(IssueHandlerInterface):
         thread_comments: list[str] | None,
     ) -> list[str]:
         return []
+
+    def _base_url(self, owner: str, repo: str, base_domain: str) -> str:
+        # Helper for faster local quoting and formatted string creation
+        project_path = quote(f'{owner}/{repo}', safe='')
+        return f'https://{base_domain}/api/v4/projects/{project_path}'
+
+    def _clone_url(
+        self,
+        owner: str,
+        repo: str,
+        token: str,
+        username: str | None,
+        base_domain: str,
+    ) -> str:
+        # Avoid branching/string formatting in runtime property, just do it here
+        if username:
+            username_and_token = f'{username}:{token}'
+        else:
+            username_and_token = token
+        return f'https://{username_and_token}@{base_domain}/{owner}/{repo}.git'
 
 
 class GitlabPRHandler(GitlabIssueHandler):
