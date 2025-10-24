@@ -14,6 +14,7 @@ from openhands.resolver.interfaces.issue import (
     ReviewThread,
 )
 from openhands.resolver.utils import extract_image_urls
+from functools import lru_cache
 
 
 class ServiceContext:
@@ -353,12 +354,13 @@ class ServiceContextIssue(ServiceContext):
         images.extend(extract_image_urls(issue.body))
         images.extend(extract_image_urls(thread_context))
 
-        user_instructions_template = jinja2.Template(user_instructions_prompt_template)
+        user_instructions_template = _get_jinja_template(user_instructions_prompt_template)
+        # Issue body and comments
         user_instructions = user_instructions_template.render(
-            body=issue.title + '\n\n' + issue.body + thread_context
-        )  # Issue body and comments
+            body=f"{issue.title}\n\n{issue.body}{thread_context}"
+        )
 
-        conversation_instructions_template = jinja2.Template(
+        conversation_instructions_template = _get_jinja_template(
             conversation_instructions_prompt_template
         )
         conversation_instructions = conversation_instructions_template.render(
@@ -413,3 +415,8 @@ class ServiceContextIssue(ServiceContext):
         self, issue_numbers: list[int] | None = None, comment_id: int | None = None
     ) -> list[Issue]:
         return self._strategy.get_converted_issues(issue_numbers, comment_id)
+
+
+@lru_cache(maxsize=32)
+def _get_jinja_template(template_str: str) -> jinja2.Template:
+    return jinja2.Template(template_str)
