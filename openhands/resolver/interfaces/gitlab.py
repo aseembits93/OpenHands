@@ -35,10 +35,18 @@ class GitlabIssueHandler(IssueHandlerInterface):
         self.token = token
         self.username = username
         self.base_domain = base_domain
-        self.base_url = self.get_base_url()
-        self.download_url = self.get_download_url()
-        self.clone_url = self.get_clone_url()
-        self.headers = self.get_headers()
+
+        # Pre-encode owner/repo for use in URLs, to avoid repeated quoting
+        self._project_path = quote(f'{self.owner}/{self.repo}', safe='')
+
+        # Compute once and cache attribute values (not calling methods repeatedly)
+        self.base_url = f'https://{self.base_domain}/api/v4/projects/{self._project_path}'
+        self.download_url = f'{self.base_url}/issues'
+        self.clone_url = self._compute_clone_url()
+        self.headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Accept': 'application/json',
+        }
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -63,10 +71,7 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'{self.base_url}/issues'
 
     def get_clone_url(self) -> str:
-        username_and_token = self.token
-        if self.username:
-            username_and_token = f'{self.username}:{self.token}'
-        return f'https://{username_and_token}@{self.base_domain}/{self.owner}/{self.repo}.git'
+        return self.clone_url
 
     def get_graphql_url(self) -> str:
         return f'https://{self.base_domain}/api/graphql'
@@ -309,6 +314,12 @@ class GitlabIssueHandler(IssueHandlerInterface):
         thread_comments: list[str] | None,
     ) -> list[str]:
         return []
+    
+    def _compute_clone_url(self) -> str:
+        username_and_token = self.token
+        if self.username:
+            username_and_token = f'{self.username}:{self.token}'
+        return f'https://{username_and_token}@{self.base_domain}/{self.owner}/{self.repo}.git'
 
 
 class GitlabPRHandler(GitlabIssueHandler):
