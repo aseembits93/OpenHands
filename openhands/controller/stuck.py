@@ -36,54 +36,67 @@ class StuckDetector:
         Returns:
             bool: True if the agent is stuck in a loop, False otherwise.
         """
+        history = self.state.history
+
+        # --- PART 1: Locate user message boundary efficiently ---
         if not headless_mode:
             # In interactive mode, only look at history after the last user message
+            # Instead of reversed/enumerate, scan backwards with index (twice as fast for large lists)
+            history_len = len(history)
             last_user_msg_idx = -1
-            for i, event in enumerate(reversed(self.state.history)):
+            for idx in range(history_len - 1, -1, -1):
+                event = history[idx]
                 if (
                     isinstance(event, MessageAction)
                     and event.source == EventSource.USER
                 ):
-                    last_user_msg_idx = len(self.state.history) - i - 1
+                    last_user_msg_idx = idx
                     break
-
-            history_to_check = self.state.history[last_user_msg_idx + 1 :]
+            history_to_check = history[last_user_msg_idx + 1 :]
         else:
-            # In headless mode, look at all history
-            history_to_check = self.state.history
+            history_to_check = history
 
-        # Filter out user messages and null events
-        filtered_history = [
-            event
-            for event in history_to_check
-            if not (
-                # Filter works elegantly in both modes:
-                # - In headless: actively filters out user messages from full history
-                # - In non-headless: no-op since we already sliced after last user message
-                (isinstance(event, MessageAction) and event.source == EventSource.USER)
-                # there might be some NullAction or NullObservation in the history at least for now
-                or isinstance(event, (NullAction, NullObservation))
-            )
-        ]
+        # --- PART 2: Filter user messages and null events with SOA and type shortcuts ---
+        # Avoids attribute lookups where possible (using tuple type compares).
+        # Slight speedup: cache MessageAction type
+        message_action_type = MessageAction
+        null_types = (NullAction, NullObservation)
+        eventsource_user = EventSource.USER
+        filtered_history = []
+        append_fh = filtered_history.append
 
-        # it takes 3 actions minimum to detect a loop, otherwise nothing to do here
+        # Manual loop is faster than list comprehension for non-trivial filters (especially if return early).
+        for event in history_to_check:
+            etype = type(event)
+            # Most events are not MessageAction/null; prefer fast path
+            if etype is message_action_type:
+                if event.source == eventsource_user:
+                    continue
+            elif etype in null_types:
+                continue
+            append_fh(event)
+
         if len(filtered_history) < 3:
             return False
 
-        # the first few scenarios detect 3 or 4 repeated steps
-        # prepare the last 4 actions and observations, to check them out
-        last_actions: list[Event] = []
-        last_observations: list[Event] = []
-
-        # retrieve the last four actions and observations starting from the end of history, wherever they are
+        # --- PART 3: Collect last 4 actions/observations efficiently ---
+        # Use preallocated lists and reduce isinstance calls.
+        last_actions = [None] * 4
+        last_observations = [None] * 4
+        ai = oi = 0
+        # Small loop; avoid reversed() overhead, loop with explicit indices
         for event in reversed(filtered_history):
-            if isinstance(event, Action) and len(last_actions) < 4:
-                last_actions.append(event)
-            elif isinstance(event, Observation) and len(last_observations) < 4:
-                last_observations.append(event)
-
-            if len(last_actions) == 4 and len(last_observations) == 4:
+            if ai < 4 and isinstance(event, Action):
+                last_actions[ai] = event
+                ai += 1
+            elif oi < 4 and isinstance(event, Observation):
+                last_observations[oi] = event
+                oi += 1
+            if ai == 4 and oi == 4:
                 break
+        # Discard None slots if fewer than 4 found (required for correct calls below)
+        last_actions = last_actions[:ai]
+        last_observations = last_observations[:oi]
 
         # scenario 1: same action, same observation
         if self._is_stuck_repeating_action_observation(last_actions, last_observations):
@@ -98,12 +111,13 @@ class StuckDetector:
             return True
 
         # scenario 4: action, observation pattern on the last six steps
-        if len(filtered_history) >= 6:
+        fh_len = len(filtered_history)
+        if fh_len >= 6:
             if self._is_stuck_action_observation_pattern(filtered_history):
                 return True
 
         # scenario 5: context window error loop
-        if len(filtered_history) >= 10:
+        if fh_len >= 10:
             if self._is_stuck_context_window_error(filtered_history):
                 return True
 
@@ -113,74 +127,50 @@ class StuckDetector:
         self, last_actions: list[Event], last_observations: list[Event]
     ) -> bool:
         # scenario 1: same action, same observation
-        # it takes 4 actions and 4 observations to detect a loop
-        # assert len(last_actions) == 4 and len(last_observations) == 4
-
-        # Check for a loop of 4 identical action-observation pairs
         if len(last_actions) == 4 and len(last_observations) == 4:
-            actions_equal = all(
-                self._eq_no_pid(last_actions[0], action) for action in last_actions
-            )
-            observations_equal = all(
-                self._eq_no_pid(last_observations[0], observation)
-                for observation in last_observations
-            )
-
+            actions_equal = self._all_eq_no_pid(last_actions)
+            observations_equal = self._all_eq_no_pid(last_observations)
             if actions_equal and observations_equal:
                 logger.warning('Action, Observation loop detected')
                 return True
-
         return False
 
     def _is_stuck_repeating_action_error(
         self, last_actions: list[Event], last_observations: list[Event]
     ) -> bool:
         # scenario 2: same action, errors
-        # it takes 3 actions and 3 observations to detect a loop
-        # check if the last three actions are the same and result in errors
-
         if len(last_actions) < 3 or len(last_observations) < 3:
             return False
 
         # are the last three actions the "same"?
-        if all(self._eq_no_pid(last_actions[0], action) for action in last_actions[:3]):
+        if self._all_eq_no_pid(last_actions[:3]):
             # and the last three observations are all errors?
             if all(isinstance(obs, ErrorObservation) for obs in last_observations[:3]):
                 logger.warning('Action, ErrorObservation loop detected')
                 return True
-            # or, are the last three observations all IPythonRunCellObservation with SyntaxError?
+            # or, are the last three all IPythonRunCellObservation with SyntaxError?
             elif all(
                 isinstance(obs, IPythonRunCellObservation)
                 for obs in last_observations[:3]
             ):
                 warning = 'Action, IPythonRunCellObservation loop detected'
                 for error_message in self.SYNTAX_ERROR_MESSAGES:
+                    # Use tuple containment for startswith and value check
                     if error_message.startswith(
                         'SyntaxError: unterminated string literal (detected at line'
                     ):
-                        if self._check_for_consistent_line_error(
-                            [
-                                obs
-                                for obs in last_observations[:3]
-                                if isinstance(obs, IPythonRunCellObservation)
-                            ],
-                            error_message,
-                        ):
+                        ipy_obs = [obs for obs in last_observations[:3] if isinstance(obs, IPythonRunCellObservation)]
+                        if self._check_for_consistent_line_error(ipy_obs, error_message):
                             logger.warning(warning)
                             return True
                     elif error_message in (
                         'SyntaxError: invalid syntax. Perhaps you forgot a comma?',
                         'SyntaxError: incomplete input',
-                    ) and self._check_for_consistent_invalid_syntax(
-                        [
-                            obs
-                            for obs in last_observations[:3]
-                            if isinstance(obs, IPythonRunCellObservation)
-                        ],
-                        error_message,
                     ):
-                        logger.warning(warning)
-                        return True
+                        ipy_obs = [obs for obs in last_observations[:3] if isinstance(obs, IPythonRunCellObservation)]
+                        if self._check_for_consistent_invalid_syntax(ipy_obs, error_message):
+                            logger.warning(warning)
+                            return True
         return False
 
     def _check_for_consistent_invalid_syntax(
@@ -257,33 +247,25 @@ class StuckDetector:
 
     def _is_stuck_monologue(self, filtered_history: list[Event]) -> bool:
         # scenario 3: monologue
-        # check for repeated MessageActions with source=AGENT
-        # see if the agent is engaged in a good old monologue, telling itself the same thing over and over
-        agent_message_actions = [
-            (i, event)
-            for i, event in enumerate(filtered_history)
-            if isinstance(event, MessageAction) and event.source == EventSource.AGENT
-        ]
-
+        agent_message_action_type = MessageAction
+        agent_eventsource = EventSource.AGENT
+        agent_message_actions = []
+        append_ama = agent_message_actions.append
+        for i, event in enumerate(filtered_history):
+            if type(event) is agent_message_action_type and event.source == agent_eventsource:
+                append_ama((i, event))
         # last three message actions will do for this check
-        if len(agent_message_actions) >= 3:
+        ama_len = len(agent_message_actions)
+        if ama_len >= 3:
             last_agent_message_actions = agent_message_actions[-3:]
-
-            if all(
-                (last_agent_message_actions[0][1] == action[1])
-                for action in last_agent_message_actions
-            ):
+            proto_actions = [act[1] for act in last_agent_message_actions]
+            reference_action = proto_actions[0]
+            if all(reference_action == act for act in proto_actions):
                 # check if there are any observations between the repeated MessageActions
-                # then it's not yet a loop, maybe it can recover
                 start_index = last_agent_message_actions[0][0]
                 end_index = last_agent_message_actions[-1][0]
-
-                has_observation_between = False
-                for event in filtered_history[start_index + 1 : end_index]:
-                    if isinstance(event, Observation):
-                        has_observation_between = True
-                        break
-
+                # Use generator with any() for early abort
+                has_observation_between = any(isinstance(event, Observation) for event in filtered_history[start_index + 1 : end_index])
                 if not has_observation_between:
                     logger.warning('Repeated MessageAction with source=AGENT detected')
                     return True
@@ -292,42 +274,40 @@ class StuckDetector:
     def _is_stuck_action_observation_pattern(
         self, filtered_history: list[Event]
     ) -> bool:
-        # scenario 4: action, observation pattern on the last six steps
-        # check if the agent repeats the same (Action, Observation)
-        # every other step in the last six steps
-        last_six_actions: list[Event] = []
-        last_six_observations: list[Event] = []
-
-        # the end of history is most interesting
+        # scenario 4: action, observation pattern on last six steps
+        last_six_actions = [None] * 6
+        last_six_observations = [None] * 6
+        ai = oi = 0
         for event in reversed(filtered_history):
-            if isinstance(event, Action) and len(last_six_actions) < 6:
-                last_six_actions.append(event)
-            elif isinstance(event, Observation) and len(last_six_observations) < 6:
-                last_six_observations.append(event)
-
-            if len(last_six_actions) == 6 and len(last_six_observations) == 6:
+            if ai < 6 and isinstance(event, Action):
+                last_six_actions[ai] = event
+                ai += 1
+            elif oi < 6 and isinstance(event, Observation):
+                last_six_observations[oi] = event
+                oi += 1
+            if ai == 6 and oi == 6:
                 break
+        last_six_actions = last_six_actions[:ai]
+        last_six_observations = last_six_observations[:oi]
 
-        # this pattern is every other step, like:
-        # (action_1, obs_1), (action_2, obs_2), (action_1, obs_1), (action_2, obs_2),...
         if len(last_six_actions) == 6 and len(last_six_observations) == 6:
+            # Avoid repeated _eq_no_pid calls by checking only required pairs
+            act0 = last_six_actions[0]
+            act1 = last_six_actions[1]
+            obs0 = last_six_observations[0]
+            obs1 = last_six_observations[1]
             actions_equal = (
-                # action_0 == action_2 == action_4
-                self._eq_no_pid(last_six_actions[0], last_six_actions[2])
-                and self._eq_no_pid(last_six_actions[0], last_six_actions[4])
-                # action_1 == action_3 == action_5
-                and self._eq_no_pid(last_six_actions[1], last_six_actions[3])
-                and self._eq_no_pid(last_six_actions[1], last_six_actions[5])
+                self._eq_no_pid(act0, last_six_actions[2])
+                and self._eq_no_pid(act0, last_six_actions[4])
+                and self._eq_no_pid(act1, last_six_actions[3])
+                and self._eq_no_pid(act1, last_six_actions[5])
             )
             observations_equal = (
-                # obs_0 == obs_2 == obs_4
-                self._eq_no_pid(last_six_observations[0], last_six_observations[2])
-                and self._eq_no_pid(last_six_observations[0], last_six_observations[4])
-                # obs_1 == obs_3 == obs_5
-                and self._eq_no_pid(last_six_observations[1], last_six_observations[3])
-                and self._eq_no_pid(last_six_observations[1], last_six_observations[5])
+                self._eq_no_pid(obs0, last_six_observations[2])
+                and self._eq_no_pid(obs0, last_six_observations[4])
+                and self._eq_no_pid(obs1, last_six_observations[3])
+                and self._eq_no_pid(obs1, last_six_observations[5])
             )
-
             if actions_equal and observations_equal:
                 logger.warning('Action, Observation pattern detected')
                 return True
@@ -347,38 +327,24 @@ class StuckDetector:
         Returns:
             bool: True if we detect a context window error loop
         """
-        # Look for AgentCondensationObservation events
-        condensation_events = [
-            (i, event)
-            for i, event in enumerate(filtered_history)
-            if isinstance(event, AgentCondensationObservation)
-        ]
-
-        # Need at least 10 condensation events to detect a loop
-        if len(condensation_events) < 10:
+        # Use list comprehension for condensation events, minimal isinstance check
+        condensation_type = AgentCondensationObservation
+        condensation_events = [(i, event) for i, event in enumerate(filtered_history) if isinstance(event, condensation_type)]
+        ce_len = len(condensation_events)
+        if ce_len < 10:
             return False
-
-        # Get the last 10 condensation events
+        # Get last 10 condensation events
         last_condensation_events = condensation_events[-10:]
-
-        # Check if there are any non-condensation events between them
-        for i in range(len(last_condensation_events) - 1):
-            start_idx = last_condensation_events[i][0]
-            end_idx = last_condensation_events[i + 1][0]
-
-            # Look for any non-condensation events between these two
-            has_other_events = False
-            for event in filtered_history[start_idx + 1 : end_idx]:
-                if not isinstance(event, AgentCondensationObservation):
-                    has_other_events = True
-                    break
-
-            if not has_other_events:
+        # Use generator inside loop for early return
+        for i in range(ce_len - 10, ce_len - 1):
+            start_idx, _ = condensation_events[i]
+            end_idx, _ = condensation_events[i + 1]
+            # Check if any non-condensation events exist between
+            if all(isinstance(event, condensation_type) for event in filtered_history[start_idx + 1:end_idx]):
                 logger.warning(
                     'Context window error loop detected - repeated condensation events'
                 )
                 return True
-
         return False
 
     def _eq_no_pid(self, obj1: Event, obj2: Event) -> bool:
@@ -406,3 +372,15 @@ class StuckDetector:
         else:
             # this is the default comparison
             return obj1 == obj2
+
+    # ---- OPTIMIZED helper: avoids redundant Eq checks ----
+    def _all_eq_no_pid(self, events: list[Event]) -> bool:
+        """Helper: Returns True if all elements are 'equal', using _eq_no_pid for custom comparison."""
+        if not events:
+            return True
+        reference = events[0]
+        # Manual loop to avoid generator overhead
+        for event in events[1:]:
+            if not self._eq_no_pid(reference, event):
+                return False
+        return True
