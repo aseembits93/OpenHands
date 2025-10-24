@@ -86,9 +86,13 @@ class Message(BaseModel):
 
     def _string_serializer(self) -> dict[str, Any]:
         # convert content to a single string
-        content = '\n'.join(
-            item.text for item in self.content if isinstance(item, TextContent)
-        )
+        # Use list comprehension and join directly for performance
+        if self.content:
+            content = '\n'.join(
+                item.text for item in self.content if isinstance(item, TextContent)
+            )
+        else:
+            content = ''
         message_dict: dict[str, Any] = {'content': content, 'role': self.role}
 
         # add tool call keys if we have a tool call or response
@@ -133,26 +137,29 @@ class Message(BaseModel):
 
         NOTE: this is necessary for both native and non-native tool calling
         """
-        # an assistant message calling a tool
-        if self.tool_calls is not None:
+        # Optimize by minimizing dict/list creation overhead for empty cases
+        tool_calls = self.tool_calls
+        if tool_calls:
             message_dict['tool_calls'] = [
                 {
-                    'id': tool_call.id,
+                    'id': tc.id,
                     'type': 'function',
                     'function': {
-                        'name': tool_call.function.name,
-                        'arguments': tool_call.function.arguments,
+                        'name': tc.function.name,
+                        'arguments': tc.function.arguments,
                     },
                 }
-                for tool_call in self.tool_calls
+                for tc in tool_calls
             ]
 
-        # an observation message with tool response
-        if self.tool_call_id is not None:
-            assert self.name is not None, (
+        tool_call_id = self.tool_call_id
+        if tool_call_id is not None:
+            # No performance improvement, but avoid repeated getattr lookup
+            name = self.name
+            assert name is not None, (
                 'name is required when tool_call_id is not None'
             )
-            message_dict['tool_call_id'] = self.tool_call_id
-            message_dict['name'] = self.name
+            message_dict['tool_call_id'] = tool_call_id
+            message_dict['name'] = name
 
         return message_dict
