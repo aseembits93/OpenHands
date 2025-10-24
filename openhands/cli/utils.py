@@ -231,12 +231,11 @@ def is_number(char: str) -> bool:
 
 
 def split_is_actually_version(split: list[str]) -> bool:
-    return (
-        len(split) > 1
-        and bool(split[1])
-        and bool(split[1][0])
-        and is_number(split[1][0])
-    )
+    if len(split) > 1:
+        second = split[1]
+        if second and second[0].isdigit():
+            return True
+    return False
 
 
 def read_file(file_path: str | Path) -> str:
