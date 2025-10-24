@@ -143,11 +143,14 @@ class LLMConfig(BaseModel):
             # Still add it to the mapping
             llm_mapping['llm'] = base_config
 
+        base_dump = base_config.model_dump()
+
         # Process each custom section independently
         for name, overrides in custom_sections.items():
             try:
                 # Merge base config with overrides
-                merged = {**base_config.model_dump(), **overrides}
+                merged = base_dump.copy()
+                merged.update(overrides)
                 custom_config = cls.model_validate(merged)
                 llm_mapping[name] = custom_config
             except ValidationError:
