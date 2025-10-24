@@ -49,10 +49,11 @@ def add_local_config_trusted_dir(folder_path: str) -> None:
 
 
 def update_usage_metrics(event: Event, usage_metrics: UsageMetrics) -> None:
-    if not hasattr(event, 'llm_metrics'):
+    try:
+        llm_metrics: Metrics | None = event.llm_metrics
+    except AttributeError:
         return
 
-    llm_metrics: Metrics | None = event.llm_metrics
     if not llm_metrics:
         return
 
