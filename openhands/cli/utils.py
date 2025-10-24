@@ -220,10 +220,12 @@ class ProviderInfo(BaseModel):
 
     def get(self, key: str, default: None = None) -> str | list[str] | None:
         """Dictionary-like get method with default value."""
-        try:
-            return self[key]
-        except KeyError:
-            return default
+        # Avoid try/except for better runtime performance.
+        if key == 'separator':
+            return self.separator
+        elif key == 'models':
+            return self.models
+        return default
 
 
 def is_number(char: str) -> bool:
