@@ -120,27 +120,42 @@ def parse_scm_header(text: str | list[str]) -> header | None:
     ]
 
     for regex, parser in check:
-        diffs = findall_regex(lines, regex)
-        if len(diffs) > 0:
-            git_opt = findall_regex(lines, git_diffcmd_header)
-            if len(git_opt) > 0:
-                res = parser(lines)
-                if res:
-                    old_path = res.old_path
-                    new_path = res.new_path
-                    if old_path.startswith('a/'):
-                        old_path = old_path[2:]
+        # Check if any line matches the regex (optimized version of findall_regex)
+        found_match = False
+        for i in range(len(lines)):
+            if regex.match(lines[i]):
+                found_match = True
+                break
+        
+        if found_match:
+            # Check for git_diffcmd_header when processing git_header_index
+            if regex is git_header_index:
+                git_opt_found = False
+                for i in range(len(lines)):
+                    if git_diffcmd_header.match(lines[i]):
+                        git_opt_found = True
+                        break
+                
+                if git_opt_found:
+                    res = parser(lines)
+                    if res:
+                        old_path = res.old_path
+                        new_path = res.new_path
+                        if old_path.startswith('a/'):
+                            old_path = old_path[2:]
 
-                    if new_path.startswith('b/'):
-                        new_path = new_path[2:]
+                        if new_path.startswith('b/'):
+                            new_path = new_path[2:]
 
-                    return header(
-                        index_path=res.index_path,
-                        old_path=old_path,
-                        old_version=res.old_version,
-                        new_path=new_path,
-                        new_version=res.new_version,
-                    )
+                        return header(
+                            index_path=res.index_path,
+                            old_path=old_path,
+                            old_version=res.old_version,
+                            new_path=new_path,
+                            new_version=res.new_version,
+                        )
+                else:
+                    res = parser(lines)
             else:
                 res = parser(lines)
 
@@ -163,9 +178,10 @@ def parse_diff_header(text: str | list[str]) -> header | None:
     ]
 
     for regex, parser in check:
-        diffs = findall_regex(lines, regex)
-        if len(diffs) > 0:
-            return parser(lines)
+        # Check if any line matches the regex (optimized version of findall_regex)
+        for i in range(len(lines)):
+            if regex.match(lines[i]):
+                return parser(lines)
 
     return None  # no header?
 
