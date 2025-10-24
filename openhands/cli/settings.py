@@ -215,10 +215,13 @@ def _get_initial_provider_index(
     default_provider: str,
     provider_choices: list[str],
 ) -> int:
-    if (current_provider or default_provider) in verified_providers:
-        return verified_providers.index(current_provider or default_provider)
-    elif current_provider or default_provider:
-        return len(provider_choices) - 1
+    chosen_provider = current_provider or default_provider
+    if chosen_provider:
+        # Avoid .index() linear scan if possible
+        try:
+            return verified_providers.index(chosen_provider)
+        except ValueError:
+            return len(provider_choices) - 1
     return 0
 
 
