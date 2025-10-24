@@ -44,12 +44,34 @@ class AmortizedForgettingCondenser(RollingCondenser):
         events_from_tail = target_size - len(head)
         tail = view[-events_from_tail:]
 
-        event_ids_to_keep = {event.id for event in head + tail}
-        event_ids_to_forget = {event.id for event in view} - event_ids_to_keep
+        # Optimize set operations: avoid concatenating lists and redundant iteration
+        event_ids_to_keep = set()
+        for event in head:
+            event_ids_to_keep.add(event.id)
+        for event in tail:
+            event_ids_to_keep.add(event.id)
+
+        # Compute min/max in a single pass instead of two
+        min_id = None
+        max_id = None
+        found_to_forget = False
+
+        for event in view:
+            eid = event.id
+            if eid not in event_ids_to_keep:
+                if not found_to_forget:
+                    min_id = eid
+                    max_id = eid
+                    found_to_forget = True
+                else:
+                    if eid < min_id:
+                        min_id = eid
+                    if eid > max_id:
+                        max_id = eid
 
         event = CondensationAction(
-            forgotten_events_start_id=min(event_ids_to_forget),
-            forgotten_events_end_id=max(event_ids_to_forget),
+            forgotten_events_start_id=min_id,
+            forgotten_events_end_id=max_id,
         )
 
         return Condensation(action=event)
