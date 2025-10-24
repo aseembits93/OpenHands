@@ -4,6 +4,13 @@ from fastapi import FastAPI, WebSocket
 from openhands.core.logger import openhands_logger as logger
 from openhands.utils.shutdown_listener import should_continue
 
+_LLM_MODELS: list[str] = [
+    'gpt-4',
+    'gpt-4-turbo-preview',
+    'gpt-4-0314',
+    'gpt-4-0613',
+]
+
 app = FastAPI()
 
 
@@ -32,12 +39,7 @@ def read_root() -> dict[str, str]:
 
 @app.get('/api/options/models')
 def read_llm_models() -> list[str]:
-    return [
-        'gpt-4',
-        'gpt-4-turbo-preview',
-        'gpt-4-0314',
-        'gpt-4-0613',
-    ]
+    return _LLM_MODELS
 
 
 @app.get('/api/options/agents')
