@@ -57,7 +57,8 @@ class GitlabIssueHandler(IssueHandlerInterface):
         return f'https://{self.username}:{self.token}@{self.base_domain}/'
 
     def get_branch_url(self, branch_name: str) -> str:
-        return self.get_base_url() + f'/repository/branches/{branch_name}'
+        # Use cached base_url directly for constructing branch URL
+        return f'{self.base_url}/repository/branches/{branch_name}'
 
     def get_download_url(self) -> str:
         return f'{self.base_url}/issues'
