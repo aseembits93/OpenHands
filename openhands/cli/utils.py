@@ -86,6 +86,25 @@ def extract_model_and_provider(model: str) -> ModelInfo:
     Returns:
         A ModelInfo object containing provider, model, and separator information
     """
+    # Convert lists to sets for O(1) lookups
+    # These sets are initialized only once per interpreter session
+    # and reused across calls to this function for all models.
+    # This avoids repeated O(n) list checks for each incoming model string.
+    # The optimization is safe as sets are not mutated.
+
+    # _VERIFIED_MODEL_SETS is used as a singleton cache
+    # to avoid repeated set construction.
+    global _VERIFIED_MODEL_SETS
+    try:
+        sets = _VERIFIED_MODEL_SETS
+    except NameError:
+        sets = _VERIFIED_MODEL_SETS = (
+            set(VERIFIED_OPENAI_MODELS),
+            set(VERIFIED_ANTHROPIC_MODELS),
+            set(VERIFIED_MISTRAL_MODELS),
+            set(VERIFIED_OPENHANDS_MODELS),
+        )
+    
     separator = '/'
     split = model.split(separator)
 
@@ -97,15 +116,17 @@ def extract_model_and_provider(model: str) -> ModelInfo:
             split = [separator.join(split)]  # undo the split
 
     if len(split) == 1:
-        # no "/" or "." separator found
-        if split[0] in VERIFIED_OPENAI_MODELS:
-            return ModelInfo(provider='openai', model=split[0], separator='/')
-        if split[0] in VERIFIED_ANTHROPIC_MODELS:
-            return ModelInfo(provider='anthropic', model=split[0], separator='/')
-        if split[0] in VERIFIED_MISTRAL_MODELS:
-            return ModelInfo(provider='mistral', model=split[0], separator='/')
-        if split[0] in VERIFIED_OPENHANDS_MODELS:
-            return ModelInfo(provider='openhands', model=split[0], separator='/')
+        candidate = split[0]
+        # We keep tuple order as (openai, anthropic, mistral, openhands)
+        openai_set, anthropic_set, mistral_set, openhands_set = sets
+        if candidate in openai_set:
+            return ModelInfo(provider='openai', model=candidate, separator='/')
+        if candidate in anthropic_set:
+            return ModelInfo(provider='anthropic', model=candidate, separator='/')
+        if candidate in mistral_set:
+            return ModelInfo(provider='mistral', model=candidate, separator='/')
+        if candidate in openhands_set:
+            return ModelInfo(provider='openhands', model=candidate, separator='/')
         # return as model only
         return ModelInfo(provider='', model=model, separator='')
 
@@ -125,6 +146,10 @@ def organize_models_and_providers(
     Returns:
         A mapping of providers to their information and models
     """
+    # The result_dict creation and model grouping remain unchanged
+    # as it is already efficient with O(n) time complexity,
+    # and "models" is expected to be a small list in CLI contexts.
+
     result_dict: dict[str, ProviderInfo] = {}
 
     for model in models:
@@ -139,10 +164,12 @@ def organize_models_and_providers(
             continue
 
         key = provider or 'other'
-        if key not in result_dict:
-            result_dict[key] = ProviderInfo(separator=separator, models=[])
-
-        result_dict[key].models.append(model_id)
+        info = result_dict.get(key)
+        if info is None:
+            # Avoid repeated __contains__ and __getitem__ by using .get()
+            result_dict[key] = ProviderInfo(separator=separator, models=[model_id])
+        else:
+            info.models.append(model_id)
 
     return result_dict
 
