@@ -7,6 +7,8 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 from openhands.utils.http_session import HttpSession
 from openhands.utils.tenacity_stop import stop_if_should_exit
 
+_HTTPStatusError = httpx.HTTPStatusError
+
 
 class RequestHTTPError(httpx.HTTPStatusError):
     """Exception raised when an error occurs in a request with details."""
@@ -23,10 +25,10 @@ class RequestHTTPError(httpx.HTTPStatusError):
 
 
 def is_retryable_error(exception: Any) -> bool:
-    return (
-        isinstance(exception, httpx.HTTPStatusError)
-        and exception.response.status_code == 429
-    )
+    if not isinstance(exception, _HTTPStatusError):
+        return False
+    response = exception.response
+    return response.status_code == 429
 
 
 @retry(
