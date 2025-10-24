@@ -118,17 +118,24 @@ class StuckDetector:
 
         # Check for a loop of 4 identical action-observation pairs
         if len(last_actions) == 4 and len(last_observations) == 4:
-            actions_equal = all(
-                self._eq_no_pid(last_actions[0], action) for action in last_actions
-            )
-            observations_equal = all(
-                self._eq_no_pid(last_observations[0], observation)
-                for observation in last_observations
-            )
+            # Fast path: Only compare first element to other 3 for both actions and observations
+            a0, a1, a2, a3 = last_actions
+            o0, o1, o2, o3 = last_observations
 
-            if actions_equal and observations_equal:
-                logger.warning('Action, Observation loop detected')
-                return True
+            actions_equal = (
+                self._eq_no_pid(a0, a1)
+                and self._eq_no_pid(a0, a2)
+                and self._eq_no_pid(a0, a3)
+            )
+            if actions_equal:
+                observations_equal = (
+                    self._eq_no_pid(o0, o1)
+                    and self._eq_no_pid(o0, o2)
+                    and self._eq_no_pid(o0, o3)
+                )
+                if observations_equal:
+                    logger.warning('Action, Observation loop detected')
+                    return True
 
         return False
 
@@ -391,10 +398,23 @@ class StuckDetector:
                 'edit_file_by_replace(' in obj1.code
                 and 'edit_file_by_replace(' in obj2.code
             ):
-                return (
-                    len(obj1.code.split('\n')) > 2
-                    and obj1.code.split('\n')[:3] == obj2.code.split('\n')[:3]
-                )
+                # Avoid splitting twice when code is unchanged
+                code1 = obj1.code
+                code2 = obj2.code
+                # Optimization: share splitting if identical
+                if code1 is code2:
+                    split_lines = code1.split('\n')
+                    if len(split_lines) > 2:
+                        return split_lines[:3] == split_lines[:3]
+                    else:
+                        return False
+                else:
+                    split1 = code1.split('\n')
+                    split2 = code2.split('\n')
+                    if len(split1) > 2 and len(split2) > 2:
+                        return split1[:3] == split2[:3]
+                    else:
+                        return False
             else:
                 # default comparison
                 return obj1 == obj2
