@@ -33,9 +33,24 @@ class LocalFileStore(FileStore):
 
     def list(self, path: str) -> list[str]:
         full_path = self.get_full_path(path)
-        files = [os.path.join(path, f) for f in os.listdir(full_path)]
-        files = [f + '/' if os.path.isdir(self.get_full_path(f)) else f for f in files]
-        return files
+        try:
+            entries = os.scandir(full_path)
+        except FileNotFoundError:
+            # To keep behavior identical if not previously handled, let the exception bubble up
+            raise
+
+        result = []
+        # Cache the prefix for construction to avoid repeated os.path.join calls and repeated get_full_path
+        prefix = path.rstrip('/')
+
+        for entry in entries:
+            entry_name = entry.name
+            p = prefix + '/' + entry_name if prefix else entry_name
+            if entry.is_dir():
+                p += '/'
+            result.append(p)
+
+        return result
 
     def delete(self, path: str) -> None:
         try:
