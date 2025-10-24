@@ -21,18 +21,29 @@ def display_deprecation_warning() -> None:
         '',
     ]
 
-    # Print warning with prominent styling
+    style_map = {
+        'DEPRECATION WARNING': '<ansired><b>{}</b></ansired>',
+        'https://': '<ansiblue>{}</ansiblue>',
+        '=': '<ansiyellow>{}</ansiyellow>',
+        'default': '<ansiyellow>{}</ansiyellow>',
+    }
+
+    # Pre-create HTML objects for fixed lines to avoid recreating
+    formatted_lines = []
     for line in warning_lines:
         if 'DEPRECATION WARNING' in line:
-            print_formatted_text(HTML(f'<ansired><b>{line}</b></ansired>'))
+            formatted_lines.append(HTML(style_map['DEPRECATION WARNING'].format(line)))
         elif line.startswith('  •'):
-            print_formatted_text(HTML(f'<ansigreen>{line}</ansigreen>'))
+            # There are no lines that match this, skip for now
+            formatted_lines.append(HTML(f'<ansigreen>{line}</ansigreen>'))
         elif 'https://' in line:
-            print_formatted_text(HTML(f'<ansiblue>{line}</ansiblue>'))
+            formatted_lines.append(HTML(style_map['https://'].format(line)))
         elif line.startswith('='):
-            print_formatted_text(HTML(f'<ansiyellow>{line}</ansiyellow>'))
+            formatted_lines.append(HTML(style_map['='].format(line)))
         else:
-            print_formatted_text(HTML(f'<ansiyellow>{line}</ansiyellow>'))
+            formatted_lines.append(HTML(style_map['default'].format(line)))
 
-    # Flush to ensure immediate display
+    for html_line in formatted_lines:
+        print_formatted_text(html_line)
+
     sys.stdout.flush()
