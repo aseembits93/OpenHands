@@ -68,31 +68,40 @@ def _update_cmd_output_metadata(
     If metadata is a dict, update the dict.
     If metadata is a CmdOutputMetadata instance, update the instance.
     """
+    if not kwargs:
+        return metadata if metadata is not None else CmdOutputMetadata()
+
     if metadata is None:
         return CmdOutputMetadata(**kwargs)
 
     if isinstance(metadata, dict):
-        metadata.update(**kwargs)
+        metadata.update(kwargs)
     elif isinstance(metadata, CmdOutputMetadata):
+        attrs = metadata.__dict__
         for key, value in kwargs.items():
-            setattr(metadata, key, value)
+            attrs[key] = value
     return metadata
 
 
 def handle_observation_deprecated_extras(extras: dict) -> dict:
     # These are deprecated in https://github.com/All-Hands-AI/OpenHands/pull/4881
-    if 'exit_code' in extras:
+
+    # Fast conditional checks to minimize Python-level lookups
+    exit_code = extras.pop('exit_code', None)
+    if exit_code is not None:
         extras['metadata'] = _update_cmd_output_metadata(
-            extras.get('metadata', None), exit_code=extras.pop('exit_code')
+            extras.get('metadata', None), exit_code=exit_code
         )
-    if 'command_id' in extras:
+
+    command_id = extras.pop('command_id', None)
+    if command_id is not None:
         extras['metadata'] = _update_cmd_output_metadata(
-            extras.get('metadata', None), pid=extras.pop('command_id')
+            extras.get('metadata', None), pid=command_id
         )
 
     # formatted_output_and_error has been deprecated in https://github.com/All-Hands-AI/OpenHands/pull/6671
-    if 'formatted_output_and_error' in extras:
-        extras.pop('formatted_output_and_error')
+    extras.pop('formatted_output_and_error', None)
+
     return extras
 
 
