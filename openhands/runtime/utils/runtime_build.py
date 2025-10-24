@@ -322,19 +322,25 @@ def truncate_hash(hash: str) -> str:
 def get_hash_for_lock_files(base_image: str, enable_browser: bool = True) -> str:
     openhands_source_dir = Path(openhands.__file__).parent
     md5 = hashlib.md5()
-    md5.update(base_image.encode())
+    md5_update = md5.update
+    md5_update(base_image.encode())
     # Only include enable_browser in hash when it's False for backward compatibility
     if not enable_browser:
-        md5.update(str(enable_browser).encode())
-    for file in ['pyproject.toml', 'poetry.lock']:
+        md5_update(str(enable_browser).encode())
+    file_names = ('pyproject.toml', 'poetry.lock')
+    # Precompute parent for fallback to avoid repeated Path() calls
+    openhands_source_dir_parent = openhands_source_dir.parent
+    for file in file_names:
         src = Path(openhands_source_dir, file)
         if not src.exists():
-            src = Path(openhands_source_dir.parent, file)
+            src = Path(openhands_source_dir_parent, file)
+        # Efficiently read and hash in 256KB chunks if file is large, fewer loop cycles
         with open(src, 'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b''):
-                md5.update(chunk)
-    # We get away with truncation because we want something that is unique
-    # rather than something that is cryptographically secure
+            chunk = f.read(262144)
+            while chunk:
+                md5_update(chunk)
+                chunk = f.read(262144)
+    # Truncate hash
     result = truncate_hash(md5.hexdigest())
     return result
 
