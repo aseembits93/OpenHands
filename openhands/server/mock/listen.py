@@ -4,6 +4,11 @@ from fastapi import FastAPI, WebSocket
 from openhands.core.logger import openhands_logger as logger
 from openhands.utils.shutdown_listener import should_continue
 
+# Define the constant list once at module load time
+_LLM_AGENTS: list[str] = [
+    'CodeActAgent',
+]
+
 app = FastAPI()
 
 
@@ -42,9 +47,8 @@ def read_llm_models() -> list[str]:
 
 @app.get('/api/options/agents')
 def read_llm_agents() -> list[str]:
-    return [
-        'CodeActAgent',
-    ]
+    # Return the constant list directly to avoid reconstructing it on every call
+    return _LLM_AGENTS
 
 
 @app.get('/api/list-files')
