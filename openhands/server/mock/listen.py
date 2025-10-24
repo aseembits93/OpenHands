@@ -4,6 +4,8 @@ from fastapi import FastAPI, WebSocket
 from openhands.core.logger import openhands_logger as logger
 from openhands.utils.shutdown_listener import should_continue
 
+_LIST_FILES: list[str] = ['hello_world.py']
+
 app = FastAPI()
 
 
@@ -49,7 +51,10 @@ def read_llm_agents() -> list[str]:
 
 @app.get('/api/list-files')
 def refresh_files() -> list[str]:
-    return ['hello_world.py']
+    # Move list allocation to a module-level constant to avoid repeated allocations.
+    # This is safe because the list contains immutable strings and is never mutated.
+    # The behavior and return type are unchanged.
+    return _LIST_FILES
 
 
 @app.get('/api/options/config')
