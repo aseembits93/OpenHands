@@ -258,7 +258,7 @@ class GitlabIssueHandler(IssueHandlerInterface):
         if 'iid' in pr_data:
             pr_data['number'] = pr_data['iid']
 
-        return dict(pr_data)
+        return pr_data
 
     def request_reviewers(self, reviewer: str, pr_number: int) -> None:
         response = httpx.get(
