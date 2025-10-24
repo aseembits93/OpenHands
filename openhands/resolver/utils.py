@@ -14,6 +14,8 @@ from openhands.events.action.message import MessageAction
 from openhands.integrations.service_types import ProviderType
 from openhands.integrations.utils import validate_provider_token
 
+_IMAGE_PATTERN = re.compile(r'!\[.*?\]\((https?://[^\s)]+)\)')
+
 
 async def identify_token(token: str, base_domain: str | None) -> ProviderType:
     """Identifies whether a token belongs to GitHub, GitLab, or Bitbucket.
@@ -121,8 +123,7 @@ def reset_logger_for_multiprocessing(
 
 def extract_image_urls(issue_body: str) -> list[str]:
     # Regular expression to match Markdown image syntax ![alt text](image_url)
-    image_pattern = r'!\[.*?\]\((https?://[^\s)]+)\)'
-    return re.findall(image_pattern, issue_body)
+    return _IMAGE_PATTERN.findall(issue_body)
 
 
 def extract_issue_references(body: str) -> list[int]:
