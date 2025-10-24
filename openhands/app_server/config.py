@@ -77,7 +77,10 @@ def _get_default_lifespan():
     # OSS alembic migrations
     if 'saas' in (os.getenv('OPENHANDS_CONFIG_CLS') or '').lower():
         return None
-    return OssAppLifespanService()
+    # Cache the expensive OssAppLifespanService instance
+    if not hasattr(_get_default_lifespan, '_cached_service'):
+        _get_default_lifespan._cached_service = OssAppLifespanService()
+    return _get_default_lifespan._cached_service
 
 
 class AppServerConfig(OpenHandsModel):
