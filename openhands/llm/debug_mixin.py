@@ -52,7 +52,7 @@ class DebugMixin:
         content = message['content']
         if isinstance(content, list):
             return '\n'.join(
-                self._format_content_element(element) for element in content
+                [self._format_content_element(element) for element in content]
             )
         return str(content)
 
