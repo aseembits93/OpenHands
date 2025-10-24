@@ -151,21 +151,18 @@ def parse_scm_header(text: str | list[str]) -> header | None:
 
 def parse_diff_header(text: str | list[str]) -> header | None:
     lines = text.splitlines() if isinstance(text, str) else text
-
-    check = [
+    parsers = [
         (unified_header_new_line, parse_unified_header),
         (context_header_old_line, parse_context_header),
         (diffcmd_header, parse_diffcmd_header),
-        # TODO:
-        # git_header can handle version-less unified headers, but
-        # will trim a/ and b/ in the paths if they exist...
         (git_header_new_line, parse_git_header),
     ]
 
-    for regex, parser in check:
-        diffs = findall_regex(lines, regex)
-        if len(diffs) > 0:
-            return parser(lines)
+    for regex, parser in parsers:
+        # Instead of calling findall_regex and then parsing, use scan_and_parse helper
+        result = _scan_and_parse(lines, regex, parser)
+        if result is not None:
+            return result
 
     return None  # no header?
 
@@ -975,3 +972,10 @@ def parse_git_binary_diff(text: str | list[str]) -> list[Change] | None:
                 old_encoded = ''
 
     return changes
+
+def _scan_and_parse(lines: list[str], regex, parser):
+    # Only call parser if any line matches the regex
+    for line in lines:
+        if regex.match(line):
+            return parser(lines)
+    return None
