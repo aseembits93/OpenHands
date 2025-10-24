@@ -156,9 +156,10 @@ class Agent(ABC):
         Raises:
         - AgentNotRegisteredError: If no agent is registered
         """
-        if not bool(cls._registry):
+        registry = cls._registry
+        if not registry:
             raise AgentNotRegisteredError()
-        return list(cls._registry.keys())
+        return list(registry)
 
     def set_mcp_tools(self, mcp_tools: list[dict]) -> None:
         """Sets the list of MCP tools for the agent.
