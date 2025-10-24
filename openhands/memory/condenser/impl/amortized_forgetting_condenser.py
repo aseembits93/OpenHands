@@ -63,7 +63,13 @@ class AmortizedForgettingCondenser(RollingCondenser):
         config: AmortizedForgettingCondenserConfig,
         llm_registry: LLMRegistry,
     ) -> AmortizedForgettingCondenser:
-        return AmortizedForgettingCondenser(**config.model_dump(exclude={'type'}))
+        # Avoid unnecessary object creation for the exclude set
+        # and avoid dictionary copy if not needed
+        d = config.model_dump()
+        # Use a direct key deletion instead of exclude param
+        if 'type' in d:
+            del d['type']
+        return AmortizedForgettingCondenser(**d)
 
 
 AmortizedForgettingCondenser.register_config(AmortizedForgettingCondenserConfig)
