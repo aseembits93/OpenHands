@@ -138,21 +138,32 @@ class GitlabIssueHandler(IssueHandlerInterface):
             'page': 1,
         }
         all_issues = []
+        get = httpx.get  # Minor optimization: store function lookup
+
+        # Avoid repeatedly re-checking issues for type with 'any'
+        # Compile-time invariant: issues always list of dicts or raise early
 
         while True:
-            response = httpx.get(self.download_url, headers=self.headers, params=params)
+            # Reuse prepared get function
+            response = get(self.download_url, headers=self.headers, params=params)
             response.raise_for_status()
             issues = response.json()
 
             if not issues:
                 break
 
-            if not isinstance(issues, list) or any(
-                [not isinstance(issue, dict) for issue in issues]
-            ):
+            # First check issue list type, only do detailed validation if necessary
+            if not isinstance(issues, list):
                 raise ValueError(
                     'Expected list of dictionaries from Service Gitlab API.'
                 )
+
+            # Only check the type of issues if necessary
+            for issue in issues:
+                if not isinstance(issue, dict):
+                    raise ValueError(
+                        'Expected list of dictionaries from Service Gitlab API.'
+                    )
 
             all_issues.extend(issues)
             assert isinstance(params['page'], int)
