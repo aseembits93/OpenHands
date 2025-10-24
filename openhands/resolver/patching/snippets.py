@@ -26,21 +26,21 @@ def findall_regex(items: list[str], regex: re.Pattern[str]) -> list[int]:
 
 
 def split_by_regex(items: list[str], regex: re.Pattern[str]) -> list[list[str]]:
-    splits = list()
+    splits = []
     indices = findall_regex(items, regex)
     if not indices:
         splits.append(items)
         return splits
 
     # Add first chunk before first match
-    splits.append(items[0 : indices[0]])
+    splits.append(items[:indices[0]])
 
     # Add chunks between matches
-    for i in range(len(indices) - 1):
-        splits.append(items[indices[i] : indices[i + 1]])
+    for prev_idx, next_idx in zip(indices, indices[1:]):
+        splits.append(items[prev_idx:next_idx])
 
     # Add final chunk after last match
-    splits.append(items[indices[-1] :])
+    splits.append(items[indices[-1]:])
 
     return splits
 
