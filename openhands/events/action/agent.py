@@ -139,21 +139,23 @@ class CondensationAction(Action):
         """Check if the optional fields are instantiated in a valid configuration."""
         # For the forgotton events, there are only two valid configurations:
         # 1. We're forgetting events based on the list of provided IDs, or
-        using_event_ids = self.forgotten_event_ids is not None
+        feids = self.forgotten_event_ids
+        fe_start = self.forgotten_events_start_id
+        fe_end = self.forgotten_events_end_id
+        summary = self.summary
+        summary_offset = self.summary_offset
+
+        using_event_ids = feids is not None
         # 2. We're forgetting events based on the range of IDs.
-        using_event_range = (
-            self.forgotten_events_start_id is not None
-            and self.forgotten_events_end_id is not None
-        )
+        using_event_range = (fe_start is not None and fe_end is not None)
 
         # Either way, we can only have one of the two valid configurations.
         forgotten_event_configuration = using_event_ids ^ using_event_range
 
         # We also need to check that if the summary is provided, so is the
         # offset (and vice versa).
-        summary_configuration = (
-            self.summary is None and self.summary_offset is None
-        ) or (self.summary is not None and self.summary_offset is not None)
+        # Faster: avoid evaluating 'and' and 'or' twice by checking for equality
+        summary_configuration = (summary is None) == (summary_offset is None)
 
         return forgotten_event_configuration and summary_configuration
 
