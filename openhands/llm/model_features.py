@@ -17,16 +17,18 @@ def normalize_model_name(model: str) -> str:
     - Drop a trailing "-gguf" suffix if present
     """
     raw = (model or '').strip().lower()
-    if '/' in raw:
-        name = raw.split('/')[-1]
-        if ':' in name:
+    idx = raw.rfind('/')
+    if idx != -1:
+        name = raw[idx + 1:]
+        colon_idx = name.find(':')
+        if colon_idx != -1:
             # Drop Ollama-style variant tag in basename
-            name = name.split(':', 1)[0]
+            name = name[:colon_idx]
     else:
         # No '/', keep the whole raw name (we do not support provider:model)
         name = raw
     if name.endswith('-gguf'):
-        name = name[: -len('-gguf')]
+        name = name[: -5]
     return name
 
 
