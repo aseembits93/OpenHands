@@ -23,6 +23,7 @@ from openhands.resolver.patching import apply_diff, parse_patch
 from openhands.resolver.resolver_output import ResolverOutput
 from openhands.resolver.utils import identify_token
 from openhands.utils.async_utils import GENERAL_TIMEOUT, call_async_from_sync
+import functools
 
 
 def apply_patch(repo_dir: str, patch: str) -> None:
@@ -455,23 +456,17 @@ def update_existing_pull_request(
         try:
             explanations = json.loads(additional_message)
             if explanations:
-                comment_message = (
-                    'OpenHands made the following changes to resolve the issues:\n\n'
-                )
+                message_lines = [
+                    'OpenHands made the following changes to resolve the issues:\n'
+                ]
                 for explanation in explanations:
-                    comment_message += f'- {explanation}\n'
+                    message_lines.append(f'- {explanation}\n')
+                comment_message = ''.join(message_lines)
 
                 # Summarize with LLM if provided
                 if llm_config is not None:
                     llm = LLM(llm_config, service_id='resolver')
-                    with open(
-                        os.path.join(
-                            os.path.dirname(__file__),
-                            'prompts/resolve/pr-changes-summary.jinja',
-                        ),
-                        'r',
-                    ) as f:
-                        template = jinja2.Template(f.read())
+                    template = _get_pr_changes_template()
                     prompt = template.render(comment_message=comment_message)
                     response = llm.completion(
                         messages=[{'role': 'user', 'content': prompt}],
@@ -489,8 +484,9 @@ def update_existing_pull_request(
     if additional_message and issue.thread_ids:
         try:
             explanations = json.loads(additional_message)
+            thread_ids = issue.thread_ids
             for count, reply_comment in enumerate(explanations):
-                comment_id = issue.thread_ids[count]
+                comment_id = thread_ids[count]
                 handler.reply_to_comment(issue.number, comment_id, reply_comment)
         except (json.JSONDecodeError, TypeError):
             msg = f'Error occurred when replying to threads; success explanations {additional_message}'
@@ -740,6 +736,15 @@ def main() -> None:
         my_args.git_user_name,
         my_args.git_user_email,
     )
+
+
+@functools.lru_cache(maxsize=1)
+def _get_pr_changes_template() -> jinja2.Template:
+    template_path = os.path.join(
+        os.path.dirname(__file__), 'prompts/resolve/pr-changes-summary.jinja'
+    )
+    with open(template_path, 'r') as f:
+        return jinja2.Template(f.read())
 
 
 if __name__ == '__main__':
