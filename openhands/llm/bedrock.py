@@ -29,4 +29,4 @@ def list_foundation_models(
 
 
 def remove_error_modelId(model_list: list[str]) -> list[str]:
-    return list(filter(lambda m: not m.startswith('bedrock'), model_list))
+    return [m for m in model_list if not m.startswith('bedrock')]
