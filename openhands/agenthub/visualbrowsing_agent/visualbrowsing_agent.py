@@ -73,13 +73,18 @@ def create_observation_prompt(
 
 def get_tabs(obs: BrowserOutputObservation) -> str:
     prompt_pieces = ['\n## Currently open tabs:']
+    active_index = obs.active_page_index
     for page_index, page_url in enumerate(obs.open_pages_urls):
-        active_or_not = ' (active tab)' if page_index == obs.active_page_index else ''
-        prompt_piece = f"""\
-Tab {page_index}{active_or_not}:
-URL: {page_url}
-"""
-        prompt_pieces.append(prompt_piece)
+        # Build active_or_not with minimal string concatenation
+        if page_index == active_index:
+            prompt_pieces.append(
+                f'Tab {page_index} (active tab):\nURL: {page_url}\n'
+            )
+        else:
+            prompt_pieces.append(
+                f'Tab {page_index}:\nURL: {page_url}\n'
+            )
+    # Avoid extra string temporary: use ''.join and add '\n' once
     return '\n'.join(prompt_pieces) + '\n'
 
 
