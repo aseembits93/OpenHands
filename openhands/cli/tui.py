@@ -65,6 +65,10 @@ from openhands.events.observation import (
 from openhands.llm.metrics import Metrics
 from openhands.mcp.error_collector import mcp_error_collector
 
+_BOLD_RE = re.compile(r'\*\*(.+?)\*\*')
+
+_UNDERLINE_RE = re.compile(r'__(.+?)__')
+
 ENABLE_STREAMING = False  # FIXME: this doesn't work
 
 # Global TextArea for streaming output
@@ -364,9 +368,9 @@ def _render_basic_markdown(text: str | None) -> str | None:
 
     safe = html.escape(text)
     # Bold: greedy within a line, non-overlapping
-    safe = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', safe)
+    safe = _BOLD_RE.sub(r'<b>\1</b>', safe)
     # Underline: double underscore
-    safe = re.sub(r'__(.+?)__', r'<u>\1</u>', safe)
+    safe = _UNDERLINE_RE.sub(r'<u>\1</u>', safe)
     return safe
 
 
