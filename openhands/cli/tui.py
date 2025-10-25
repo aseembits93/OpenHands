@@ -1026,13 +1026,16 @@ def cli_confirm(
 
 def kb_cancel() -> KeyBindings:
     """Custom key bindings to handle ESC as a user cancellation."""
-    bindings = KeyBindings()
+    if not hasattr(kb_cancel, "_bindings"):
+        bindings = KeyBindings()
 
-    @bindings.add('escape')
-    def _(event: KeyPressEvent) -> None:
-        event.app.exit(exception=UserCancelledError, style='class:aborting')
+        @bindings.add('escape')
+        def _(event: KeyPressEvent) -> None:
+            event.app.exit(exception=UserCancelledError, style='class:aborting')
 
-    return bindings
+        kb_cancel._bindings = bindings
+
+    return kb_cancel._bindings
 
 
 class UserCancelledError(Exception):
