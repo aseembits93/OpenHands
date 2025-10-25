@@ -29,24 +29,40 @@ class GithubIssueHandler(IssueHandlerInterface):
             username: Optional GitHub username
             base_domain: The domain for GitHub Enterprise (default: "github.com")
         """
+        # Cache string interpolations to avoid repeated computation
         self.owner = owner
         self.repo = repo
         self.token = token
         self.username = username
         self.base_domain = base_domain
-        self.base_url = self.get_base_url()
-        self.download_url = self.get_download_url()
-        self.clone_url = self.get_clone_url()
-        self.headers = self.get_headers()
+
+        if base_domain == 'github.com':
+            base_url = f'https://api.github.com/repos/{owner}/{repo}'
+        else:
+            base_url = f'https://{base_domain}/api/v3/repos/{owner}/{repo}'
+        self.base_url = base_url
+
+        # No need to call get_download_url and get_clone_url (from parent) -- inline logic for speed/memory
+        self.download_url = f'{base_url}/issues'
+
+        if username:
+            username_and_token = f'{username}:{token}'
+        else:
+            username_and_token = f'x-auth-token:{token}'
+        self.clone_url = f'https://{username_and_token}@{base_domain}/{owner}/{repo}.git'
+
+        # Inline get_headers for speed and direct dict allocation
+        self.headers: dict[str, str] = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json',
+        }
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
 
     def get_headers(self) -> dict[str, str]:
-        return {
-            'Authorization': f'token {self.token}',
-            'Accept': 'application/vnd.github.v3+json',
-        }
+        # Return the cached headers (safe since all data is immutable)
+        return self.headers
 
     def get_base_url(self) -> str:
         if self.base_domain == 'github.com':
