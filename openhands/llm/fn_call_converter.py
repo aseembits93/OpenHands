@@ -26,6 +26,10 @@ from openhands.llm.tool_names import (
     STR_REPLACE_EDITOR_TOOL_NAME,
 )
 
+_PARAMETER_TAG_PATTERN = re.compile(
+    r'<parameter=([a-zA-Z0-9_]+)=([^<]*)</parameter>'
+)
+
 # Inspired by: https://docs.together.ai/docs/llama-3-function-calling#function-calling-w-llama-31-70b
 SYSTEM_PROMPT_SUFFIX_TEMPLATE = """
 You have access to the following functions:
@@ -717,8 +721,7 @@ def _normalize_parameter_tags(fn_body: str) -> str:
     downstream parsing to succeed.
     """
     # Replace '<parameter=name=value</parameter>' with '<parameter=name>value</parameter>'
-    return re.sub(
-        r'<parameter=([a-zA-Z0-9_]+)=([^<]*)</parameter>',
+    return _PARAMETER_TAG_PATTERN.sub(
         r'<parameter=\1>\2</parameter>',
         fn_body,
     )
