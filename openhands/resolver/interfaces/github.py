@@ -35,7 +35,7 @@ class GithubIssueHandler(IssueHandlerInterface):
         self.username = username
         self.base_domain = base_domain
         self.base_url = self.get_base_url()
-        self.download_url = self.get_download_url()
+        self.download_url = f'{self.base_url}/issues'
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
 
@@ -61,7 +61,7 @@ class GithubIssueHandler(IssueHandlerInterface):
         return self.get_base_url() + f'/branches/{branch_name}'
 
     def get_download_url(self) -> str:
-        return f'{self.base_url}/issues'
+        return self.download_url
 
     def get_clone_url(self) -> str:
         username_and_token = (
