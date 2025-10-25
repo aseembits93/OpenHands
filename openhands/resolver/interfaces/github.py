@@ -34,7 +34,11 @@ class GithubIssueHandler(IssueHandlerInterface):
         self.token = token
         self.username = username
         self.base_domain = base_domain
-        self.base_url = self.get_base_url()
+        self.base_url = (
+            f'https://api.github.com/repos/{self.owner}/{self.repo}'
+            if self.base_domain == 'github.com'
+            else f'https://{self.base_domain}/api/v3/repos/{self.owner}/{self.repo}'
+        )
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
@@ -49,10 +53,7 @@ class GithubIssueHandler(IssueHandlerInterface):
         }
 
     def get_base_url(self) -> str:
-        if self.base_domain == 'github.com':
-            return f'https://api.github.com/repos/{self.owner}/{self.repo}'
-        else:
-            return f'https://{self.base_domain}/api/v3/repos/{self.owner}/{self.repo}'
+        return self.base_url
 
     def get_authorize_url(self) -> str:
         return f'https://{self.username}:{self.token}@{self.base_domain}/'
