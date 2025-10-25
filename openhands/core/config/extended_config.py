@@ -32,9 +32,11 @@ class ExtendedConfig(RootModel[dict[str, Any]]):
 
     def __getattr__(self, key: str) -> Any:
         # Fallback for attribute access using the root dict.
+        # Optimization: avoid redundant variable annotation on local variables here
         try:
-            root_dict: dict[str, Any] = self.model_dump()
-            return root_dict[key]
+            # Directly access self.root, which contains the data,
+            # instead of calling model_dump(), which is more expensive.
+            return self.root[key]
         except KeyError as e:
             raise AttributeError(
                 f"'ExtendedConfig' object has no attribute '{key}'"
