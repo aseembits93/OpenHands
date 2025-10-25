@@ -232,11 +232,12 @@ class BitBucketMixinBase(BaseGitService, HTTPClient):
 
     def _is_valid_microagent_file(self, item: dict) -> bool:
         """Check if an item represents a valid microagent file."""
-        return (
-            item['type'] == 'commit_file'
-            and item['path'].endswith('.md')
-            and not item['path'].endswith('README.md')
-        )
+        if item['type'] != 'commit_file':
+            return False
+        path = item['path']
+        if path.endswith('README.md'):
+            return False
+        return path.endswith('.md')
 
     def _get_file_name_from_item(self, item: dict) -> str:
         """Extract file name from directory item."""
