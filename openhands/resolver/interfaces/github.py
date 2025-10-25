@@ -38,6 +38,11 @@ class GithubIssueHandler(IssueHandlerInterface):
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
+        self._graphql_url = (
+            'https://api.github.com/graphql'
+            if self.base_domain == 'github.com'
+            else f'https://{self.base_domain}/api/graphql'
+        )
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -72,10 +77,7 @@ class GithubIssueHandler(IssueHandlerInterface):
         return f'https://{username_and_token}@{self.base_domain}/{self.owner}/{self.repo}.git'
 
     def get_graphql_url(self) -> str:
-        if self.base_domain == 'github.com':
-            return 'https://api.github.com/graphql'
-        else:
-            return f'https://{self.base_domain}/api/graphql'
+        return self._graphql_url
 
     def get_compare_url(self, branch_name: str) -> str:
         return f'https://{self.base_domain}/{self.owner}/{self.repo}/compare/{branch_name}?expand=1'
