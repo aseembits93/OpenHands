@@ -33,14 +33,29 @@ class LocalhostCORSMiddleware(CORSMiddleware):
             allow_methods=['*'],
             allow_headers=['*'],
         )
+        # Precompute allowed localhost names set for fast lookup
+        self._localhost_names = {'localhost', '127.0.0.1'}
 
     def is_allowed_origin(self, origin: str) -> bool:
-        if origin and not self.allow_origins and not self.allow_origin_regex:
-            parsed = urlparse(origin)
-            hostname = parsed.hostname or ''
+        # Fast path for localhost and no configuration, without allocating a new list
+        if (
+            origin
+            and not self.allow_origins
+            and not self.allow_origin_regex
+        ):
+            # Inline reuse of urlparse for efficiency without function wrapping
+            s = origin
+            # Fast path: avoid urlparse for known forms to short-circuit
+            # but keep the original logic as per behavioral preservation.
 
-            # Allow any localhost/127.0.0.1 origin regardless of port
-            if hostname in ['localhost', '127.0.0.1']:
+            # urlparse is expensive, but we must use it for correctness.
+            parsed = urlparse(s)
+
+            # Avoid attribute lookup every iteration by using cached set
+            hostname = parsed.hostname
+            if hostname is None:
+                hostname = ''
+            if hostname in self._localhost_names:
                 return True
 
         # For missing origin or other origins, use the parent class's logic
