@@ -37,6 +37,7 @@ def model_matches(model: str, patterns: list[str]) -> bool:
     against the full, lowercased model string (including provider prefix).
     Otherwise, it is matched against the normalized basename.
     """
+    # PRECOMPUTE, as all patterns use the same normalization
     raw = (model or '').strip().lower()
     name = normalize_model_name(model)
     for pat in patterns:
@@ -131,11 +132,24 @@ SUPPORTS_STOP_WORDS_FALSE_PATTERNS: list[str] = [
 
 
 def get_features(model: str) -> ModelFeatures:
+    # Precompute raw and name ONCE for all four feature lookups (instead of 4x)
+    raw = (model or '').strip().lower()
+    name = normalize_model_name(model)
     return ModelFeatures(
-        supports_function_calling=model_matches(model, FUNCTION_CALLING_PATTERNS),
-        supports_reasoning_effort=model_matches(model, REASONING_EFFORT_PATTERNS),
-        supports_prompt_cache=model_matches(model, PROMPT_CACHE_PATTERNS),
-        supports_stop_words=not model_matches(
-            model, SUPPORTS_STOP_WORDS_FALSE_PATTERNS
-        ),
+        supports_function_calling=_model_matches_fast(raw, name, FUNCTION_CALLING_PATTERNS),
+        supports_reasoning_effort=_model_matches_fast(raw, name, REASONING_EFFORT_PATTERNS),
+        supports_prompt_cache=_model_matches_fast(raw, name, PROMPT_CACHE_PATTERNS),
+        supports_stop_words=not _model_matches_fast(raw, name, SUPPORTS_STOP_WORDS_FALSE_PATTERNS),
     )
+
+def _model_matches_fast(raw: str, name: str, patterns: list[str]) -> bool:
+    """Helper to match with precomputed strings, for batching."""
+    for pat in patterns:
+        pat_l = pat.lower()
+        if '/' in pat_l:
+            if fnmatch(raw, pat_l):
+                return True
+        else:
+            if fnmatch(name, pat_l):
+                return True
+    return False
