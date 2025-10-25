@@ -240,7 +240,7 @@ class BitBucketMixinBase(BaseGitService, HTTPClient):
 
     def _get_file_name_from_item(self, item: dict) -> str:
         """Extract file name from directory item."""
-        return item['path'].split('/')[-1]
+        return item['path'].rpartition('/')[2]
 
     def _get_file_path_from_item(self, item: dict, microagents_path: str) -> str:
         """Extract file path from directory item."""
