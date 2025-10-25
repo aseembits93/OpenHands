@@ -1,8 +1,11 @@
+from functools import lru_cache
+
 import boto3
 
 from openhands.core.logger import openhands_logger as logger
 
 
+@lru_cache(maxsize=8)
 def list_foundation_models(
     aws_region_name: str, aws_access_key_id: str, aws_secret_access_key: str
 ) -> list[str]:
