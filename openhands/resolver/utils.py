@@ -148,7 +148,7 @@ def get_unique_uid(start_uid: int = 1000) -> int:
     existing_uids = set()
     with open('/etc/passwd', 'r') as passwd_file:
         for line in passwd_file:
-            parts = line.split(':')
+            parts = line.split(':', 3)
             if len(parts) > 2:
                 try:
                     existing_uids.add(int(parts[2]))
