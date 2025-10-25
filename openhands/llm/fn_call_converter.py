@@ -404,36 +404,47 @@ TOOL_RESULT_REGEX_PATTERN = r'EXECUTION RESULT of \[(.*?)\]:\n(.*)'
 
 def convert_tool_call_to_string(tool_call: dict) -> str:
     """Convert tool call to content in string format."""
-    if 'function' not in tool_call:
-        raise FunctionCallConversionError("Tool call must contain 'function' key.")
-    if 'id' not in tool_call:
-        raise FunctionCallConversionError("Tool call must contain 'id' key.")
-    if 'type' not in tool_call:
-        raise FunctionCallConversionError("Tool call must contain 'type' key.")
+    # Fast-path checks by combining all missing key checks in one line
+    missing_keys = [k for k in ('function', 'id', 'type') if k not in tool_call]
+    if missing_keys:
+        raise FunctionCallConversionError(
+            f"Tool call must contain {', '.join(repr(k) for k in missing_keys)} key{'s' if len(missing_keys) > 1 else ''}."
+        )
     if tool_call['type'] != 'function':
         raise FunctionCallConversionError("Tool call type must be 'function'.")
 
-    ret = f'<function={tool_call["function"]["name"]}>\n'
+    func = tool_call["function"]
+    name = func["name"]
+    arguments = func["arguments"]
+
+    # Preallocate list for output lines to avoid many intermediate string objects
+    lines = [f'<function={name}>\n']
     try:
-        args = json.loads(tool_call['function']['arguments'])
+        args = json.loads(arguments)
     except json.JSONDecodeError as e:
         raise FunctionCallConversionError(
-            f'Failed to parse arguments as JSON. Arguments: {tool_call["function"]["arguments"]}'
+            f'Failed to parse arguments as JSON. Arguments: {arguments}'
         ) from e
+
+    # Avoid repeated isinstance checks and unnecessary f-string formatting
     for param_name, param_value in args.items():
         is_multiline = isinstance(param_value, str) and '\n' in param_value
-        ret += f'<parameter={param_name}>'
+        lines.append(f'<parameter={param_name}>')
         if is_multiline:
-            ret += '\n'
-        if isinstance(param_value, list) or isinstance(param_value, dict):
-            ret += json.dumps(param_value)
+            lines.append('\n')
+
+        # Use json.dumps for list/dict, str(param_value) for others
+        if type(param_value) in (list, dict):
+            lines.append(json.dumps(param_value))
         else:
-            ret += f'{param_value}'
+            lines.append(str(param_value))
+
         if is_multiline:
-            ret += '\n'
-        ret += '</parameter>\n'
-    ret += '</function>'
-    return ret
+            lines.append('\n')
+        lines.append('</parameter>\n')
+    lines.append('</function>')
+    # Using ''.join is much more efficient than repeated string concatenation
+    return ''.join(lines)
 
 
 def convert_tools_to_description(tools: list[dict]) -> str:
