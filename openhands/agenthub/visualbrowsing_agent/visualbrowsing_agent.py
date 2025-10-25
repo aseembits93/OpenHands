@@ -84,15 +84,12 @@ URL: {page_url}
 
 
 def get_axtree(axtree_txt: str) -> str:
-    bid_info = """\
-Note: [bid] is the unique alpha-numeric identifier at the beginning of lines for each element in the AXTree. Always use bid to refer to elements in your actions.
-
-"""
-    visible_tag_info = """\
-Note: You can only interact with visible elements. If the "visible" tag is not present, the element is not visible on the page.
-
-"""
-    return f'\n## AXTree:\n{bid_info}{visible_tag_info}{axtree_txt}\n'
+    prefix = (
+        '\n## AXTree:\n'
+        "Note: [bid] is the unique alpha-numeric identifier at the beginning of lines for each element in the AXTree. Always use bid to refer to elements in your actions.\n\n"
+        "Note: You can only interact with visible elements. If the \"visible\" tag is not present, the element is not visible on the page.\n\n"
+    )
+    return f'{prefix}{axtree_txt}\n'
 
 
 def get_action_prompt(action_set: HighLevelActionSet) -> str:
