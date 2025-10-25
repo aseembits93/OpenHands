@@ -41,9 +41,10 @@ Review the current state of the page and all other information to find the best 
 """
     goal_image_urls = []
     if image_urls is not None:
-        for idx, url in enumerate(image_urls):
-            goal_txt = goal_txt + f'Images: Goal input image ({idx + 1})\n'
-            goal_image_urls.append(url)
+        # Precompute lines and join once for better string concatenation performance
+        lines = [f'Images: Goal input image ({idx + 1})\n' for idx in range(len(image_urls))]
+        goal_txt += ''.join(lines)
+        goal_image_urls = list(image_urls)  # Avoid repeated appends, single shallow copy if needed
     goal_txt += '\n'
     return goal_txt, goal_image_urls
 
