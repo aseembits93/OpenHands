@@ -729,12 +729,13 @@ def display_usage_metrics(usage_metrics: UsageMetrics) -> None:
 
 
 def get_session_duration(session_init_time: float) -> str:
-    current_time = time.time()
-    session_duration = current_time - session_init_time
-    hours, remainder = divmod(session_duration, 3600)
-    minutes, seconds = divmod(remainder, 60)
+    session_duration = time.time() - session_init_time
+    total_seconds = int(session_duration)
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
 
-    return f'{int(hours)}h {int(minutes)}m {int(seconds)}s'
+    return f'{hours}h {minutes}m {seconds}s'
 
 
 def display_shutdown_message(usage_metrics: UsageMetrics, session_id: str) -> None:
