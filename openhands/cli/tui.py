@@ -812,7 +812,13 @@ class CommandCompleter(Completer):
 
 def create_prompt_session(config: OpenHandsConfig) -> PromptSession[str]:
     """Creates a prompt session with VI mode enabled if specified in the config."""
-    return PromptSession(style=DEFAULT_STYLE, vi_mode=config.cli.vi_mode)
+    if not hasattr(create_prompt_session, "_cache"):
+        create_prompt_session._cache = {}
+    cache = create_prompt_session._cache
+    key = config.cli.vi_mode
+    if key not in cache:
+        cache[key] = PromptSession(style=DEFAULT_STYLE, vi_mode=key)
+    return cache[key]
 
 
 async def read_prompt_input(
