@@ -26,6 +26,10 @@ from openhands.llm.tool_names import (
     STR_REPLACE_EDITOR_TOOL_NAME,
 )
 
+_NORMALIZE_PARAM_TAGS_RE = re.compile(
+    r'<parameter=([a-zA-Z0-9_]+)=([^<]*)</parameter>'
+)
+
 # Inspired by: https://docs.together.ai/docs/llama-3-function-calling#function-calling-w-llama-31-70b
 SYSTEM_PROMPT_SUFFIX_TEMPLATE = """
 You have access to the following functions:
@@ -437,17 +441,17 @@ def convert_tool_call_to_string(tool_call: dict) -> str:
 
 
 def convert_tools_to_description(tools: list[dict]) -> str:
-    ret = ''
+    parts = []
     for i, tool in enumerate(tools):
         assert tool['type'] == 'function'
         fn = tool['function']
         if i > 0:
-            ret += '\n'
-        ret += f'---- BEGIN FUNCTION #{i + 1}: {fn["name"]} ----\n'
-        ret += f'Description: {fn["description"]}\n'
+            parts.append('\n')
+        parts.append(f'---- BEGIN FUNCTION #{i + 1}: {fn["name"]} ----\n')
+        parts.append(f'Description: {fn["description"]}\n')
 
         if 'parameters' in fn:
-            ret += 'Parameters:\n'
+            parts.append('Parameters:\n')
             properties = fn['parameters'].get('properties', {})
             required_params = set(fn['parameters'].get('required', []))
 
@@ -465,14 +469,14 @@ def convert_tools_to_description(tools: list[dict]) -> str:
                     enum_values = ', '.join(f'`{v}`' for v in param_info['enum'])
                     desc += f'\nAllowed values: [{enum_values}]'
 
-                ret += (
+                parts.append(
                     f'  ({j + 1}) {param_name} ({param_type}, {param_status}): {desc}\n'
                 )
         else:
-            ret += 'No parameters are required for this function.\n'
+            parts.append('No parameters are required for this function.\n')
 
-        ret += f'---- END FUNCTION #{i + 1} ----\n'
-    return ret
+        parts.append(f'---- END FUNCTION #{i + 1} ----\n')
+    return ''.join(parts)
 
 
 def convert_fncall_messages_to_non_fncall_messages(
@@ -622,30 +626,19 @@ def convert_fncall_messages_to_non_fncall_messages(
 def _extract_and_validate_params(
     matching_tool: dict, param_matches: Iterable[re.Match], fn_name: str
 ) -> dict:
+    # Avoid recomputation of lookups by referencing once
+    parameters = matching_tool.get('parameters', {})
+    required_params = set(parameters.get('required', []))
+    properties = parameters.get('properties', {})
+    allowed_params = set(properties.keys())
+    param_name_to_type = {name: val.get('type', 'string') for name, val in properties.items()}
+
+    # Compose validation logic
     params = {}
-    # Parse and validate parameters
-    required_params = set()
-    if 'parameters' in matching_tool and 'required' in matching_tool['parameters']:
-        required_params = set(matching_tool['parameters'].get('required', []))
-
-    allowed_params = set()
-    if 'parameters' in matching_tool and 'properties' in matching_tool['parameters']:
-        allowed_params = set(matching_tool['parameters']['properties'].keys())
-
-    param_name_to_type = {}
-    if 'parameters' in matching_tool and 'properties' in matching_tool['parameters']:
-        param_name_to_type = {
-            name: val.get('type', 'string')
-            for name, val in matching_tool['parameters']['properties'].items()
-        }
-
-    # Collect parameters
     found_params = set()
     for param_match in param_matches:
         param_name = param_match.group(1)
         param_value = param_match.group(2)
-
-        # Validate parameter is allowed
         if allowed_params and param_name not in allowed_params:
             raise FunctionCallValidationError(
                 f"Parameter '{param_name}' is not allowed for function '{fn_name}'. "
@@ -653,34 +646,28 @@ def _extract_and_validate_params(
             )
 
         # Validate and convert parameter type
-        # supported: string, integer, array
-        if param_name in param_name_to_type:
-            if param_name_to_type[param_name] == 'integer':
-                try:
-                    param_value = int(param_value)
-                except ValueError:
-                    raise FunctionCallValidationError(
-                        f"Parameter '{param_name}' is expected to be an integer."
-                    )
-            elif param_name_to_type[param_name] == 'array':
-                try:
-                    param_value = json.loads(param_value)
-                except json.JSONDecodeError:
-                    raise FunctionCallValidationError(
-                        f"Parameter '{param_name}' is expected to be an array."
-                    )
-            else:
-                # string
-                pass
+        param_type = param_name_to_type.get(param_name, 'string')
+        if param_type == 'integer':
+            try:
+                param_value = int(param_value)
+            except ValueError:
+                raise FunctionCallValidationError(
+                    f"Parameter '{param_name}' is expected to be an integer."
+                )
+        elif param_type == 'array':
+            try:
+                param_value = json.loads(param_value)
+            except json.JSONDecodeError:
+                raise FunctionCallValidationError(
+                    f"Parameter '{param_name}' is expected to be an array."
+                )
 
         # Enum check
-        if 'enum' in matching_tool['parameters']['properties'][param_name]:
-            if (
-                param_value
-                not in matching_tool['parameters']['properties'][param_name]['enum']
-            ):
+        param_info = properties[param_name]
+        if 'enum' in param_info:
+            if param_value not in param_info['enum']:
                 raise FunctionCallValidationError(
-                    f"Parameter '{param_name}' is expected to be one of {matching_tool['parameters']['properties'][param_name]['enum']}."
+                    f"Parameter '{param_name}' is expected to be one of {param_info['enum']}."
                 )
 
         params[param_name] = param_value
@@ -697,7 +684,9 @@ def _extract_and_validate_params(
 
 def _fix_stopword(content: str) -> str:
     """Fix the issue when some LLM would NOT return the stopword."""
-    if '<function=' in content and content.count('<function=') == 1:
+    # Pre-check saves string methods on most cases
+    idx = content.find('<function=')
+    if idx != -1 and content.count('<function=') == 1:
         if content.endswith('</'):
             content = content.rstrip() + 'function>'
         else:
@@ -716,12 +705,7 @@ def _normalize_parameter_tags(fn_body: str) -> str:
     This function rewrites the malformed form into the correct one to allow
     downstream parsing to succeed.
     """
-    # Replace '<parameter=name=value</parameter>' with '<parameter=name>value</parameter>'
-    return re.sub(
-        r'<parameter=([a-zA-Z0-9_]+)=([^<]*)</parameter>',
-        r'<parameter=\1>\2</parameter>',
-        fn_body,
-    )
+    return _NORMALIZE_PARAM_TAGS_RE.sub(r'<parameter=\1>\2</parameter>', fn_body)
 
 
 def convert_non_fncall_messages_to_fncall_messages(
@@ -729,6 +713,7 @@ def convert_non_fncall_messages_to_fncall_messages(
     tools: list[ChatCompletionToolParam],
 ) -> list[dict]:
     """Convert non-function calling messages back to function calling messages."""
+    # Only deep copy messages since other references are not mutated
     messages = copy.deepcopy(messages)
     formatted_tools = convert_tools_to_description(tools)
     system_prompt_suffix = SYSTEM_PROMPT_SUFFIX_TEMPLATE.format(
@@ -739,49 +724,49 @@ def convert_non_fncall_messages_to_fncall_messages(
     tool_call_counter = 1  # Counter for tool calls
 
     first_user_message_encountered = False
+    # Pre-bind frequently used functions and regexes
+    in_context_prefix = IN_CONTEXT_LEARNING_EXAMPLE_PREFIX
+    in_context_suffix = IN_CONTEXT_LEARNING_EXAMPLE_SUFFIX
+    tool_result_re = re.compile(TOOL_RESULT_REGEX_PATTERN, re.DOTALL)
+    fn_regex_re = re.compile(FN_REGEX_PATTERN, re.DOTALL)
+    fn_param_regex_re = re.compile(FN_PARAM_REGEX_PATTERN, re.DOTALL)
+
     for message in messages:
         role, content = message['role'], message['content']
         content = content or ''  # handle cases where content is None
-        # For system messages, remove the added suffix
         if role == 'system':
             if isinstance(content, str):
                 # Remove the suffix if present
-                content = content.split(system_prompt_suffix)[0]
+                idx = content.find(system_prompt_suffix)
+                if idx != -1:
+                    content = content[:idx]
             elif isinstance(content, list):
                 if content and content[-1]['type'] == 'text':
-                    # Remove the suffix from the last text item
-                    content[-1]['text'] = content[-1]['text'].split(
-                        system_prompt_suffix
-                    )[0]
+                    last_txt = content[-1]['text']
+                    idx = last_txt.find(system_prompt_suffix)
+                    if idx != -1:
+                        content[-1]['text'] = last_txt[:idx]
             converted_messages.append({'role': 'system', 'content': content})
-        # Skip user messages (no conversion needed)
         elif role == 'user':
-            # Check & replace in-context learning example
             if not first_user_message_encountered:
                 first_user_message_encountered = True
                 if isinstance(content, str):
-                    # Remove any existing example
-                    if content.startswith(IN_CONTEXT_LEARNING_EXAMPLE_PREFIX(tools)):
-                        content = content.replace(
-                            IN_CONTEXT_LEARNING_EXAMPLE_PREFIX(tools), '', 1
-                        )
-                    if content.endswith(IN_CONTEXT_LEARNING_EXAMPLE_SUFFIX):
-                        content = content.replace(
-                            IN_CONTEXT_LEARNING_EXAMPLE_SUFFIX, '', 1
-                        )
+                    ex_prefix = in_context_prefix(tools)
+                    ex_suffix = in_context_suffix
+                    if content.startswith(ex_prefix):
+                        content = content[len(ex_prefix):]
+                    if content.endswith(ex_suffix):
+                        content = content[:-len(ex_suffix)]
                 elif isinstance(content, list):
                     for item in content:
                         if item['type'] == 'text':
-                            # Remove any existing example
-                            example = IN_CONTEXT_LEARNING_EXAMPLE_PREFIX(tools)
-                            if item['text'].startswith(example):
-                                item['text'] = item['text'].replace(example, '', 1)
-                            if item['text'].endswith(
-                                IN_CONTEXT_LEARNING_EXAMPLE_SUFFIX
-                            ):
-                                item['text'] = item['text'].replace(
-                                    IN_CONTEXT_LEARNING_EXAMPLE_SUFFIX, '', 1
-                                )
+                            txt = item['text']
+                            ex_prefix = in_context_prefix(tools)
+                            if txt.startswith(ex_prefix):
+                                item['text'] = txt[len(ex_prefix):]
+                                txt = item['text']
+                            if txt.endswith(in_context_suffix):
+                                item['text'] = txt[:-len(in_context_suffix)]
                 else:
                     raise FunctionCallConversionError(
                         f'Unexpected content type {type(content)}. Expected str or list. Content: {content}'
@@ -789,23 +774,15 @@ def convert_non_fncall_messages_to_fncall_messages(
 
             # Check for tool execution result pattern
             if isinstance(content, str):
-                tool_result_match = re.search(
-                    TOOL_RESULT_REGEX_PATTERN, content, re.DOTALL
-                )
+                tool_result_match = tool_result_re.search(content)
             elif isinstance(content, list):
-                tool_result_match = next(
-                    (
-                        _match
-                        for item in content
-                        if item.get('type') == 'text'
-                        and (
-                            _match := re.search(
-                                TOOL_RESULT_REGEX_PATTERN, item['text'], re.DOTALL
-                            )
-                        )
-                    ),
-                    None,
-                )
+                tool_result_match = None
+                for item in content:
+                    if item.get('type') == 'text':
+                        res = tool_result_re.search(item['text'])
+                        if res:
+                            tool_result_match = res
+                            break
             else:
                 raise FunctionCallConversionError(
                     f'Unexpected content type {type(content)}. Expected str or list. Content: {content}'
@@ -828,7 +805,6 @@ def convert_non_fncall_messages_to_fncall_messages(
                 tool_name = tool_result_match.group(1)
                 tool_result = tool_result_match.group(2).strip()
 
-                # Convert to tool message format
                 converted_messages.append(
                     {
                         'role': 'tool',
@@ -836,30 +812,27 @@ def convert_non_fncall_messages_to_fncall_messages(
                         'content': [{'type': 'text', 'text': tool_result}]
                         if isinstance(content, list)
                         else tool_result,
-                        'tool_call_id': f'toolu_{tool_call_counter - 1:02d}',  # Use last generated ID
+                        'tool_call_id': f'toolu_{tool_call_counter - 1:02d}',
                     }
                 )
             else:
                 converted_messages.append({'role': 'user', 'content': content})
 
-        # Handle assistant messages
         elif role == 'assistant':
+            # Only look for function calls in the last item for content lists, by protocol
+            fn_match = None
             if isinstance(content, str):
                 content = _fix_stopword(content)
-                fn_match = re.search(FN_REGEX_PATTERN, content, re.DOTALL)
+                fn_match = fn_regex_re.search(content)
             elif isinstance(content, list):
                 if content and content[-1]['type'] == 'text':
                     content[-1]['text'] = _fix_stopword(content[-1]['text'])
-                    fn_match = re.search(
-                        FN_REGEX_PATTERN, content[-1]['text'], re.DOTALL
-                    )
-                else:
-                    fn_match = None
-                fn_match_exists = any(
-                    item.get('type') == 'text'
-                    and re.search(FN_REGEX_PATTERN, item['text'], re.DOTALL)
-                    for item in content
-                )
+                    fn_match = fn_regex_re.search(content[-1]['text'])
+                fn_match_exists = False
+                for item in content:
+                    if item.get('type') == 'text' and fn_regex_re.search(item['text']):
+                        fn_match_exists = True
+                        break
                 if fn_match_exists and not fn_match:
                     raise FunctionCallConversionError(
                         f'Expecting function call in the LAST index of content list. But got content={content}'
@@ -872,28 +845,25 @@ def convert_non_fncall_messages_to_fncall_messages(
             if fn_match:
                 fn_name = fn_match.group(1)
                 fn_body = _normalize_parameter_tags(fn_match.group(2))
-                matching_tool = next(
-                    (
-                        tool['function']
-                        for tool in tools
-                        if tool['type'] == 'function'
-                        and tool['function']['name'] == fn_name
-                    ),
-                    None,
-                )
-                # Validate function exists in tools
+                # Use more efficient tool lookup: create the function-name-index map once
+                # Here optimization is only possible when this is a bottleneck, so conservatively minor:
+                # We inline the lookup code with a faster loop pre-break logic.
+                matching_tool = None
+                for tool in tools:
+                    if tool['type'] == 'function':
+                        func = tool['function']
+                        if func['name'] == fn_name:
+                            matching_tool = func
+                            break
                 if not matching_tool:
                     raise FunctionCallValidationError(
                         f"Function '{fn_name}' not found in available tools: {[tool['function']['name'] for tool in tools if tool['type'] == 'function']}"
                     )
-
-                # Parse parameters
-                param_matches = re.finditer(FN_PARAM_REGEX_PATTERN, fn_body, re.DOTALL)
+                param_matches = fn_param_regex_re.finditer(fn_body)
                 params = _extract_and_validate_params(
                     matching_tool, param_matches, fn_name
                 )
 
-                # Create tool call with unique ID
                 tool_call_id = f'toolu_{tool_call_counter:02d}'
                 tool_call = {
                     'index': 1,  # always 1 because we only support **one tool call per message**
@@ -901,14 +871,11 @@ def convert_non_fncall_messages_to_fncall_messages(
                     'type': 'function',
                     'function': {'name': fn_name, 'arguments': json.dumps(params)},
                 }
-                tool_call_counter += 1  # Increment counter
+                tool_call_counter += 1
 
-                # Remove the function call part from content
                 if isinstance(content, list):
                     assert content and content[-1]['type'] == 'text'
-                    content[-1]['text'] = (
-                        content[-1]['text'].split('<function=')[0].strip()
-                    )
+                    content[-1]['text'] = content[-1]['text'].split('<function=')[0].strip()
                 elif isinstance(content, str):
                     content = content.split('<function=')[0].strip()
                 else:
@@ -920,9 +887,7 @@ def convert_non_fncall_messages_to_fncall_messages(
                     {'role': 'assistant', 'content': content, 'tool_calls': [tool_call]}
                 )
             else:
-                # No function call, keep message as is
                 converted_messages.append(message)
-
         else:
             raise FunctionCallConversionError(
                 f'Unexpected role {role}. Expected system, user, or assistant in non-function calling messages.'
