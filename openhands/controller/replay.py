@@ -66,11 +66,25 @@ class ReplayManager:
         if not self.replay_mode:
             return False
 
-        assert self.replay_events is not None
-        while self.replay_index < len(self.replay_events) and not self._replayable():
-            self.replay_index += 1
+        # No need to check for None; always a list by __init__ contract.
 
-        return self._replayable()
+        # Manual loop unroll for hot path: minimize calls to _replayable() and list indexing
+        events = self.replay_events
+        idx = self.replay_index
+        n = len(events)
+        # These local variable assignments (idx, n, events) reduce attribute lookups in the loop
+        while idx < n:
+            # Call isinstance directly rather than _replayable for fewer attribute lookups
+            if isinstance(events[idx], Action):
+                self.replay_index = idx
+                break
+            idx += 1
+        else:
+            # No replayable found, possibly at the end; set replay_index to n (exhausted)
+            self.replay_index = n
+
+        # Now return whether the current is replayable (if within bounds)
+        return self.replay_index < n and isinstance(events[self.replay_index], Action)
 
     def step(self) -> Action:
         assert self.replay_events is not None
