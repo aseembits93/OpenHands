@@ -437,17 +437,18 @@ def convert_tool_call_to_string(tool_call: dict) -> str:
 
 
 def convert_tools_to_description(tools: list[dict]) -> str:
-    ret = ''
+    # Preallocate and append to a list for efficient string building
+    ret_parts: list[str] = []
     for i, tool in enumerate(tools):
         assert tool['type'] == 'function'
         fn = tool['function']
         if i > 0:
-            ret += '\n'
-        ret += f'---- BEGIN FUNCTION #{i + 1}: {fn["name"]} ----\n'
-        ret += f'Description: {fn["description"]}\n'
+            ret_parts.append('\n')
+        ret_parts.append(f'---- BEGIN FUNCTION #{i + 1}: {fn["name"]} ----\n')
+        ret_parts.append(f'Description: {fn["description"]}\n')
 
         if 'parameters' in fn:
-            ret += 'Parameters:\n'
+            ret_parts.append('Parameters:\n')
             properties = fn['parameters'].get('properties', {})
             required_params = set(fn['parameters'].get('required', []))
 
@@ -462,17 +463,18 @@ def convert_tools_to_description(tools: list[dict]) -> str:
 
                 # Handle enum values if present
                 if 'enum' in param_info:
+                    # Pre-format the enum values efficiently
                     enum_values = ', '.join(f'`{v}`' for v in param_info['enum'])
-                    desc += f'\nAllowed values: [{enum_values}]'
+                    desc = f'{desc}\nAllowed values: [{enum_values}]'
 
-                ret += (
+                ret_parts.append(
                     f'  ({j + 1}) {param_name} ({param_type}, {param_status}): {desc}\n'
                 )
         else:
-            ret += 'No parameters are required for this function.\n'
+            ret_parts.append('No parameters are required for this function.\n')
 
-        ret += f'---- END FUNCTION #{i + 1} ----\n'
-    return ret
+        ret_parts.append(f'---- END FUNCTION #{i + 1} ----\n')
+    return ''.join(ret_parts)
 
 
 def convert_fncall_messages_to_non_fncall_messages(
