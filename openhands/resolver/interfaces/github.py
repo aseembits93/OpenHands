@@ -58,7 +58,8 @@ class GithubIssueHandler(IssueHandlerInterface):
         return f'https://{self.username}:{self.token}@{self.base_domain}/'
 
     def get_branch_url(self, branch_name: str) -> str:
-        return self.get_base_url() + f'/branches/{branch_name}'
+        # Use precomputed base_url
+        return f'{self.base_url}/branches/{branch_name}'
 
     def get_download_url(self) -> str:
         return f'{self.base_url}/issues'
