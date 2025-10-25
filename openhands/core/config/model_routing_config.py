@@ -27,13 +27,12 @@ class ModelRoutingConfig(BaseModel):
             dict[str, ModelRoutingConfig]: A mapping where the key "model_routing" corresponds to the [model_routing] configuration
         """
 
-        # Initialize the result mapping
-        model_routing_mapping: dict[str, ModelRoutingConfig] = {}
+        # Use a local reference to the class method for a slight optimization
+        validate = cls.model_validate
 
-        # Try to create the configuration instance
         try:
-            model_routing_mapping['model_routing'] = cls.model_validate(data)
+            config_instance = validate(data)
         except ValidationError as e:
             raise ValueError(f'Invalid model routing configuration: {e}')
 
-        return model_routing_mapping
+        return {'model_routing': config_instance}
