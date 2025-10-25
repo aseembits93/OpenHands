@@ -109,6 +109,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, rate_limiter: InMemoryRateLimiter):
         super().__init__(app)
         self.rate_limiter = rate_limiter
+        self._non_rate_limited_prefixes = ('/assets',)
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
@@ -125,7 +126,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
     def is_rate_limited_request(self, request: StarletteRequest) -> bool:
-        if request.url.path.startswith('/assets'):
+        path = request.url.path
+        if path.startswith(self._non_rate_limited_prefixes):
             return False
         # Put Other non rate limited checks here
         return True
