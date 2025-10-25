@@ -34,10 +34,27 @@ class GithubIssueHandler(IssueHandlerInterface):
         self.token = token
         self.username = username
         self.base_domain = base_domain
-        self.base_url = self.get_base_url()
-        self.download_url = self.get_download_url()
-        self.clone_url = self.get_clone_url()
-        self.headers = self.get_headers()
+
+        # Precompute frequently used URLs and headers to avoid repetition
+        # Avoid calling self.get_base_url/self.get_download_url multiple times
+        base_url = (
+            f'https://api.github.com/repos/{owner}/{repo}'
+            if base_domain == 'github.com'
+            else f'https://{base_domain}/api/v3/repos/{owner}/{repo}'
+        )
+        self.base_url = base_url
+        self.download_url = f'{base_url}/issues'
+        if username:
+            username_and_token = f'{username}:{token}'
+        else:
+            username_and_token = f'x-auth-token:{token}'
+        self.clone_url = (
+            f'https://{username_and_token}@{base_domain}/{owner}/{repo}.git'
+        )
+        self.headers = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json',
+        }
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -64,12 +81,8 @@ class GithubIssueHandler(IssueHandlerInterface):
         return f'{self.base_url}/issues'
 
     def get_clone_url(self) -> str:
-        username_and_token = (
-            f'{self.username}:{self.token}'
-            if self.username
-            else f'x-auth-token:{self.token}'
-        )
-        return f'https://{username_and_token}@{self.base_domain}/{self.owner}/{self.repo}.git'
+        # Fast access: already cached result
+        return self.clone_url
 
     def get_graphql_url(self) -> str:
         if self.base_domain == 'github.com':
