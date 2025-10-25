@@ -13,6 +13,8 @@ import litellm
 from pythonjsonlogger.json import JsonFormatter
 from termcolor import colored
 
+_ANSI_ESCAPE_PATTERN = re.compile(r'\x1B\[\d+(?:;\d+){0,2}m')
+
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 DEBUG = os.getenv('DEBUG', 'False').lower() in ['true', '1', 'yes']
 DEBUG_LLM = os.getenv('DEBUG_LLM', 'False').lower() in ['true', '1', 'yes']
@@ -121,8 +123,7 @@ def strip_ansi(s: str) -> str:
     http://www.ecma-international.org/publications/files/ECMA-ST/Ecma-048.pdf
     # https://github.com/ewen-lbh/python-strip-ansi/blob/master/strip_ansi/__init__.py
     """
-    pattern = re.compile(r'\x1B\[\d+(;\d+){0,2}m')
-    stripped = pattern.sub('', s)
+    stripped = _ANSI_ESCAPE_PATTERN.sub('', s)
     return stripped
 
 
