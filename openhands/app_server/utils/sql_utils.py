@@ -98,7 +98,11 @@ def create_enum_type_decorator(enum_type: type[T]):
 
 def row2dict(row):
     d = {}
+    row_dict = row.__dict__
     for column in row.__table__.columns:
-        d[column.name] = getattr(row, column.name)
+        try:
+            d[column.name] = row_dict[column.name]
+        except KeyError:
+            d[column.name] = getattr(row, column.name)
 
     return d
