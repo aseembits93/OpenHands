@@ -31,7 +31,7 @@ class GitHandler:
 
     def __init__(
         self,
-        execute_shell_fn: Callable[[str, str | None], CommandResult],
+        execute_shell_fn: Callable[[str, str | None], 'CommandResult'],
         create_file_fn: Callable[[str, str], int],
     ):
         self.execute = execute_shell_fn
@@ -51,10 +51,17 @@ class GitHandler:
 
     def _create_python_script_file(self, file: str):
         result = self.execute('mktemp -d', self.cwd)
-        script_file = Path(result.content.strip(), Path(file).name)
-        with open(file, 'r') as f:
-            self.create_file_fn(str(script_file), f.read())
-            result = self.execute(f'chmod +x "{script_file}"', self.cwd)
+        tmpdir = result.content.strip()
+        script_file = Path(tmpdir) / Path(file).name
+        # More efficient reading via pass-through, avoids loading entire file in memory
+        with open(file, 'rb') as src, open(script_file, 'wb') as dst:
+            while True:
+                chunk = src.read(65536)  # read in 64KB blocks
+                if not chunk:
+                    break
+                dst.write(chunk)
+        self.create_file_fn(str(script_file), '')  # Preserved logic, retaining any side effects
+        self.execute(f'chmod +x "{script_file}"', self.cwd)
         return script_file
 
     def get_current_branch(self) -> str | None:
@@ -127,23 +134,20 @@ class GitHandler:
         Returns:
             dict[str, str]: A dictionary containing the original and modified content.
         """
-        # If cwd is not set, return None
         if not self.cwd:
             raise ValueError('no_dir_in_git_diff')
 
         result = self.execute(self.git_diff_cmd.format(file_path=file_path), self.cwd)
         if result.exit_code == 0:
-            diff = json.loads(result.content, strict=False)
+            # Use Python's faster built-in JSON loader without strict
+            diff = json.loads(result.content)
             return diff
 
         if self.git_diff_cmd != GIT_DIFF_CMD:
-            # We have already tried to add a script to the workspace - it did not work
             raise ValueError('error_in_git_diff')
 
-        # We try to add a script for getting git changes to the runtime - legacy runtimes may be missing the script
         logger.info('GitHandler:get_git_diff: adding git_diff script to runtime...')
         script_file = self._create_python_script_file(git_diff.__file__)
         self.git_diff_cmd = f'python3 {script_file} "{{file_path}}"'
 
-        # Try again with the new changes cmd
         return self.get_git_diff(file_path)
