@@ -52,19 +52,42 @@ def resolve_path(
 
 
 def read_lines(all_lines: list[str], start: int = 0, end: int = -1) -> list[str]:
-    start = max(start, 0)
-    start = min(start, len(all_lines))
-    end = -1 if end == -1 else max(end, 0)
-    end = min(end, len(all_lines))
+    # Precompute len(all_lines) only once
+    num_lines = len(all_lines)
+
+    # Optimize start and end boundary checks
+    # Only clamp start if needed
+    if start < 0:
+        start = 0
+    elif start > num_lines:
+        start = num_lines
+    # Conditionally handle end (reuse -1 sentinel if needed)
     if end == -1:
+        # Return entire list or slice from start to end
         if start == 0:
             return all_lines
         else:
+            # Fast slicing
             return all_lines[start:]
     else:
-        num_lines = len(all_lines)
-        begin = max(0, min(start, num_lines - 2))
-        end = -1 if end > num_lines else max(begin + 1, end)
+        if end < 0:
+            end = 0
+        elif end > num_lines:
+            end = num_lines
+        # Clamp begin for traditional behavior: max(0, min(start, num_lines - 2))
+        # Only necessary if num_lines > 1; else begin=0 always
+        if num_lines > 1:
+            begin = start if start < num_lines - 1 else num_lines - 2
+            if begin < 0:
+                begin = 0
+        else:
+            begin = 0
+        # end: -1 if end > num_lines else max(begin+1, end)
+        if end > num_lines:
+            end = -1
+        else:
+            end = end if end > begin else begin + 1
+        # Fast slicing
         return all_lines[begin:end]
 
 
