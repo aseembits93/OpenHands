@@ -38,6 +38,7 @@ class GithubIssueHandler(IssueHandlerInterface):
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
+        self._pull_url_prefix = f'https://{self.base_domain}/{self.owner}/{self.repo}/pull/'
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -242,7 +243,8 @@ class GithubIssueHandler(IssueHandlerInterface):
         response.raise_for_status()
 
     def get_pull_url(self, pr_number: int) -> str:
-        return f'https://{self.base_domain}/{self.owner}/{self.repo}/pull/{pr_number}'
+        # Using precomputed prefix and string concatenation for efficiency
+        return self._pull_url_prefix + str(pr_number)
 
     def get_default_branch_name(self) -> str:
         response = httpx.get(f'{self.base_url}', headers=self.headers)
