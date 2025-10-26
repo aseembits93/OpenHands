@@ -237,35 +237,72 @@ class Metrics:
         result._accumulated_cost = self._accumulated_cost - baseline._accumulated_cost
 
         # Include only costs that were added after the baseline
-        if baseline._costs:
-            last_baseline_timestamp = baseline._costs[-1].timestamp
-            result._costs = [
-                cost for cost in self._costs if cost.timestamp > last_baseline_timestamp
-            ]
+        base_costs = baseline._costs
+        self_costs = self._costs
+        if base_costs:
+            last_baseline_timestamp = base_costs[-1].timestamp
+            # Use reversed and next with enumerate to more efficiently slice costs
+            # Find the first cost whose timestamp > last_baseline_timestamp
+            left = 0
+            right = len(self_costs)
+            # Binary search for first cost with timestamp > last_baseline_timestamp
+            # Only optimize if costs are sorted by timestamp (which is usually the case in such accumulators)
+            # If not, just fall back to the comprehension
+            try:
+                if (not self_costs or self_costs[0].timestamp > last_baseline_timestamp or
+                        self_costs[-1].timestamp <= last_baseline_timestamp):
+                    # all or none match
+                    if self_costs and self_costs[0].timestamp > last_baseline_timestamp:
+                        result._costs = self_costs.copy()
+                    else:
+                        result._costs = []
+                else:
+                    # Binary search: find the split index
+                    while left < right:
+                        mid = (left + right) // 2
+                        if self_costs[mid].timestamp > last_baseline_timestamp:
+                            right = mid
+                        else:
+                            left = mid + 1
+                    result._costs = self_costs[left:]
+            except Exception:
+                # Fallback: original logic in pathological cases
+                result._costs = [
+                    cost for cost in self_costs if cost.timestamp > last_baseline_timestamp
+                ]
         else:
-            result._costs = self._costs.copy()
+            result._costs = self_costs.copy()
 
         # Include only response latencies that were added after the baseline
-        result._response_latencies = self._response_latencies[
-            len(baseline._response_latencies) :
-        ]
+        base_latencies_len = len(baseline._response_latencies)
+        if base_latencies_len == 0:
+            result._response_latencies = self._response_latencies.copy()
+        elif base_latencies_len == len(self._response_latencies):
+            result._response_latencies = []
+        else:
+            result._response_latencies = self._response_latencies[base_latencies_len:]
 
         # Include only token usages that were added after the baseline
-        result._token_usages = self._token_usages[len(baseline._token_usages) :]
+        base_tokens_len = len(baseline._token_usages)
+        if base_tokens_len == 0:
+            result._token_usages = self._token_usages.copy()
+        elif base_tokens_len == len(self._token_usages):
+            result._token_usages = []
+        else:
+            result._token_usages = self._token_usages[base_tokens_len:]
 
         # Calculate accumulated token usage difference
+        # Access once, avoid attribute-cached property calls
         base_usage = baseline.accumulated_token_usage
         current_usage = self.accumulated_token_usage
 
+        # Compute differences directly, all are simple integers
         result._accumulated_token_usage = TokenUsage(
             model=self.model_name,
             prompt_tokens=current_usage.prompt_tokens - base_usage.prompt_tokens,
-            completion_tokens=current_usage.completion_tokens
-            - base_usage.completion_tokens,
-            cache_read_tokens=current_usage.cache_read_tokens
-            - base_usage.cache_read_tokens,
-            cache_write_tokens=current_usage.cache_write_tokens
-            - base_usage.cache_write_tokens,
+            completion_tokens=current_usage.completion_tokens - base_usage.completion_tokens,
+            cache_read_tokens=current_usage.cache_read_tokens - base_usage.cache_read_tokens,
+            cache_write_tokens=current_usage.cache_write_tokens - base_usage.cache_write_tokens,
             context_window=current_usage.context_window,
             per_turn_token=0,
             response_id='',
