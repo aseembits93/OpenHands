@@ -68,6 +68,8 @@ class PromptManager:
             'microagent_info.j2'
         )
 
+        self._cached_user_message: str = self.user_template.render().strip()
+
     def _load_template(self, template_name: str) -> Template:
         """Load a template from the prompt directory.
 
@@ -102,7 +104,7 @@ class PromptManager:
         These additional context will convert the current generic agent
         into a more specialized agent that is tailored to the user's task.
         """
-        return self.user_template.render().strip()
+        return self._cached_user_message
 
     def build_workspace_context(
         self,
