@@ -38,6 +38,9 @@ class GithubIssueHandler(IssueHandlerInterface):
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
         self.headers = self.get_headers()
+        self._compare_url_base = (
+            f'https://{self.base_domain}/{self.owner}/{self.repo}/compare/'
+        )
 
     def set_owner(self, owner: str) -> None:
         self.owner = owner
@@ -78,7 +81,8 @@ class GithubIssueHandler(IssueHandlerInterface):
             return f'https://{self.base_domain}/api/graphql'
 
     def get_compare_url(self, branch_name: str) -> str:
-        return f'https://{self.base_domain}/{self.owner}/{self.repo}/compare/{branch_name}?expand=1'
+        # Concatenating strings is faster than repeated formatted f-strings
+        return f'{self._compare_url_base}{branch_name}?expand=1'
 
     def get_converted_issues(
         self, issue_numbers: list[int] | None = None, comment_id: int | None = None
