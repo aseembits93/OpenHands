@@ -555,24 +555,26 @@ class GithubPRHandler(GithubIssueHandler):
             closing_issue_numbers
         )
 
-        for issue_number in unique_issue_references:
-            try:
-                if self.base_domain == 'github.com':
-                    url = f'https://api.github.com/repos/{self.owner}/{self.repo}/issues/{issue_number}'
-                else:
-                    url = f'https://{self.base_domain}/api/v3/repos/{self.owner}/{self.repo}/issues/{issue_number}'
-                headers = {
-                    'Authorization': f'Bearer {self.token}',
-                    'Accept': 'application/vnd.github.v3+json',
-                }
-                response = httpx.get(url, headers=headers)
-                response.raise_for_status()
-                issue_data = response.json()
-                issue_body = issue_data.get('body', '')
-                if issue_body:
-                    closing_issues.append(issue_body)
-            except httpx.HTTPError as e:
-                logger.warning(f'Failed to fetch issue {issue_number}: {str(e)}')
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Accept': 'application/vnd.github.v3+json',
+        }
+
+        with httpx.Client() as client:
+            for issue_number in unique_issue_references:
+                try:
+                    if self.base_domain == 'github.com':
+                        url = f'https://api.github.com/repos/{self.owner}/{self.repo}/issues/{issue_number}'
+                    else:
+                        url = f'https://{self.base_domain}/api/v3/repos/{self.owner}/{self.repo}/issues/{issue_number}'
+                    response = client.get(url, headers=headers)
+                    response.raise_for_status()
+                    issue_data = response.json()
+                    issue_body = issue_data.get('body', '')
+                    if issue_body:
+                        closing_issues.append(issue_body)
+                except httpx.HTTPError as e:
+                    logger.warning(f'Failed to fetch issue {issue_number}: {str(e)}')
 
         return closing_issues
 
