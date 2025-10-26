@@ -6,6 +6,7 @@ from openhands.agenthub.codeact_agent.tools.security_utils import (
     SECURITY_RISK_DESC,
 )
 from openhands.llm.tool_names import EXECUTE_BASH_TOOL_NAME
+import sys
 
 _DETAILED_BASH_DESCRIPTION = """Execute a bash command in the terminal within a persistent shell session.
 
@@ -42,28 +43,42 @@ _SHORT_BASH_DESCRIPTION = """Execute a bash command in the terminal.
 def create_cmd_run_tool(
     use_short_description: bool = False,
 ) -> ChatCompletionToolParam:
-    description = (
-        _SHORT_BASH_DESCRIPTION if use_short_description else _DETAILED_BASH_DESCRIPTION
-    )
+    # Fast path for non-Windows: avoid repeated refine_prompt on static strings
+    if sys.platform == 'win32':
+        description = refine_prompt(
+            _SHORT_BASH_DESCRIPTION if use_short_description else _DETAILED_BASH_DESCRIPTION
+        )
+        command_desc = refine_prompt(
+            'The bash command to execute. Can be empty string to view additional logs when previous exit code is `-1`. Can be `C-c` (Ctrl+C) to interrupt the currently running process. Note: You can only execute one bash command at a time. If you need to run multiple commands sequentially, you can use `&&` or `;` to chain them together.'
+        )
+        is_input_desc = refine_prompt(
+            'If True, the command is an input to the running process. If False, the command is a bash command to be executed in the terminal. Default is False.'
+        )
+    else:
+        # On non-Windows platforms, no need for refinement
+        description = _SHORT_BASH_DESCRIPTION if use_short_description else _DETAILED_BASH_DESCRIPTION
+        command_desc = (
+            'The bash command to execute. Can be empty string to view additional logs when previous exit code is `-1`. Can be `C-c` (Ctrl+C) to interrupt the currently running process. Note: You can only execute one bash command at a time. If you need to run multiple commands sequentially, you can use `&&` or `;` to chain them together.'
+        )
+        is_input_desc = (
+            'If True, the command is an input to the running process. If False, the command is a bash command to be executed in the terminal. Default is False.'
+        )
+
     return ChatCompletionToolParam(
         type='function',
         function=ChatCompletionToolParamFunctionChunk(
             name=EXECUTE_BASH_TOOL_NAME,
-            description=refine_prompt(description),
+            description=description,
             parameters={
                 'type': 'object',
                 'properties': {
                     'command': {
                         'type': 'string',
-                        'description': refine_prompt(
-                            'The bash command to execute. Can be empty string to view additional logs when previous exit code is `-1`. Can be `C-c` (Ctrl+C) to interrupt the currently running process. Note: You can only execute one bash command at a time. If you need to run multiple commands sequentially, you can use `&&` or `;` to chain them together.'
-                        ),
+                        'description': command_desc,
                     },
                     'is_input': {
                         'type': 'string',
-                        'description': refine_prompt(
-                            'If True, the command is an input to the running process. If False, the command is a bash command to be executed in the terminal. Default is False.'
-                        ),
+                        'description': is_input_desc,
                         'enum': ['true', 'false'],
                     },
                     'timeout': {
