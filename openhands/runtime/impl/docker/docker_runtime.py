@@ -40,6 +40,15 @@ from openhands.utils.async_utils import call_sync_from_async
 from openhands.utils.shutdown_listener import add_shutdown_listener
 from openhands.utils.tenacity_stop import stop_if_should_exit
 
+_RETRYABLE_EXCEPTIONS = (
+    ConnectionError,
+    httpx.ConnectTimeout,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+    httpx.HTTPStatusError,
+    httpx.ReadTimeout,
+)
+
 CONTAINER_NAME_PREFIX = 'openhands-runtime-'
 
 EXECUTION_SERVER_PORT_RANGE = (30000, 39999)
@@ -55,21 +64,9 @@ if os.name == 'nt' or platform.release().endswith('microsoft-standard-WSL2'):
 
 
 def _is_retryablewait_until_alive_error(exception: Exception) -> bool:
-    if isinstance(exception, tenacity.RetryError):
-        cause = exception.last_attempt.exception()
-        return _is_retryablewait_until_alive_error(cause)
-
-    return isinstance(
-        exception,
-        (
-            ConnectionError,
-            httpx.ConnectTimeout,
-            httpx.NetworkError,
-            httpx.RemoteProtocolError,
-            httpx.HTTPStatusError,
-            httpx.ReadTimeout,
-        ),
-    )
+    while isinstance(exception, tenacity.RetryError):
+        exception = exception.last_attempt.exception()
+    return isinstance(exception, _RETRYABLE_EXCEPTIONS)
 
 
 class DockerRuntime(ActionExecutionClient):
