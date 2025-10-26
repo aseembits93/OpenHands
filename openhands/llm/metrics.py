@@ -1,4 +1,3 @@
-import copy
 import time
 
 from pydantic import BaseModel, Field
@@ -218,7 +217,14 @@ class Metrics:
 
     def copy(self) -> 'Metrics':
         """Create a deep copy of the Metrics object."""
-        return copy.deepcopy(self)
+        new_obj = Metrics(self.model_name)
+        new_obj._accumulated_cost = self._accumulated_cost
+        new_obj._max_budget_per_task = self._max_budget_per_task
+        new_obj._costs = self._costs.copy()
+        new_obj._response_latencies = self._response_latencies.copy()
+        new_obj._token_usages = self._token_usages.copy()
+        new_obj._accumulated_token_usage = self._accumulated_token_usage
+        return new_obj
 
     def diff(self, baseline: 'Metrics') -> 'Metrics':
         """Calculate the difference between current metrics and a baseline.
