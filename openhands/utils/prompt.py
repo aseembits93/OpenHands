@@ -58,7 +58,7 @@ class PromptManager:
             raise ValueError('Prompt directory is not set')
 
         self.prompt_dir: str = prompt_dir
-        self.env = Environment(loader=FileSystemLoader(prompt_dir))
+        self.env = Environment(loader=FileSystemLoader(prompt_dir), auto_reload=False)
         self.system_template: Template = self._load_template(system_prompt_filename)
         self.user_template: Template = self._load_template('user_prompt.j2')
         self.additional_info_template: Template = self._load_template(
