@@ -1,6 +1,10 @@
 import re
 import sys
 
+_RE_EXECUTE_BASH = re.compile(r'\bexecute_bash\b', flags=re.IGNORECASE)
+
+_RE_BASH = re.compile(r'\bbash\b', flags=re.IGNORECASE)
+
 
 def refine_prompt(prompt: str):
     """Refines the prompt based on the platform.
@@ -17,12 +21,8 @@ def refine_prompt(prompt: str):
     if sys.platform == 'win32':
         # Replace 'bash' with 'powershell' including tool names like 'execute_bash'
         # First replace 'execute_bash' with 'execute_powershell' to handle tool names
-        result = re.sub(
-            r'\bexecute_bash\b', 'execute_powershell', prompt, flags=re.IGNORECASE
-        )
+        result = _RE_EXECUTE_BASH.sub('execute_powershell', prompt)
         # Then replace standalone 'bash' with 'powershell'
-        result = re.sub(
-            r'(?<!execute_)(?<!_)\bbash\b', 'powershell', result, flags=re.IGNORECASE
-        )
+        result = _RE_BASH.sub('powershell', result)
         return result
     return prompt
