@@ -14,6 +14,14 @@ from openhands.events.action.message import MessageAction
 from openhands.integrations.service_types import ProviderType
 from openhands.integrations.utils import validate_provider_token
 
+_codeblock_re = re.compile(r'```.*?```', flags=re.DOTALL)
+
+_inlinecode_re = re.compile(r'`[^`]*`')
+
+_url_hash_re = re.compile(r'https?://[^\s)]*#\d+[^\s)]*')
+
+_issue_ref_pattern = re.compile(r'(?:^|[\s\[({]|[^\w#])#(\d+)(?=[\s,.\])}]|$)')
+
 
 async def identify_token(token: str, base_domain: str | None) -> ProviderType:
     """Identifies whether a token belongs to GitHub, GitLab, or Bitbucket.
@@ -127,21 +135,16 @@ def extract_image_urls(issue_body: str) -> list[str]:
 
 def extract_issue_references(body: str) -> list[int]:
     # First, remove code blocks as they may contain false positives
-    body = re.sub(r'```.*?```', '', body, flags=re.DOTALL)
+    body = _codeblock_re.sub('', body)
 
     # Remove inline code
-    body = re.sub(r'`[^`]*`', '', body)
+    body = _inlinecode_re.sub('', body)
 
     # Remove URLs that contain hash symbols
-    body = re.sub(r'https?://[^\s)]*#\d+[^\s)]*', '', body)
+    body = _url_hash_re.sub('', body)
 
     # Now extract issue numbers, making sure they're not part of other text
-    # The pattern matches #number that:
-    # 1. Is at the start of text or after whitespace/punctuation
-    # 2. Is followed by whitespace, punctuation, or end of text
-    # 3. Is not part of a URL
-    pattern = r'(?:^|[\s\[({]|[^\w#])#(\d+)(?=[\s,.\])}]|$)'
-    return [int(match) for match in re.findall(pattern, body)]
+    return [int(match) for match in _issue_ref_pattern.findall(body)]
 
 
 def get_unique_uid(start_uid: int = 1000) -> int:
