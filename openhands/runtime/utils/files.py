@@ -26,27 +26,33 @@ def resolve_path(
     Returns:
         The resolved path on the host filesystem.
     """
+    # Avoid unnecessary Path object creation
+    working_directory_path = Path(working_directory)
+    workspace_mount_path_in_sandbox_path = Path(workspace_mount_path_in_sandbox)
+    workspace_base_path = Path(workspace_base)
+
+    # Apply working directory (fast path: file_path is absolute)
     path_in_sandbox = Path(file_path)
-
-    # Apply working directory
     if not path_in_sandbox.is_absolute():
-        path_in_sandbox = Path(working_directory) / path_in_sandbox
+        path_in_sandbox = working_directory_path / path_in_sandbox
 
-    # Sanitize the path with respect to the root of the full sandbox
-    # (deny any .. path traversal to parent directories of the sandbox)
-    abs_path_in_sandbox = path_in_sandbox.resolve()
-
-    # If the path is outside the workspace, deny it
-    if not abs_path_in_sandbox.is_relative_to(workspace_mount_path_in_sandbox):
+    # Use strict=False to avoid unnecessary filesystem checks in resolve
+    abs_path_in_sandbox = path_in_sandbox.resolve(strict=False)
+    
+    # Precompute parts for startswith optimization
+    sandbox_root_parts = workspace_mount_path_in_sandbox_path.parts
+    candidate_parts = abs_path_in_sandbox.parts
+    len_sandbox_root = len(sandbox_root_parts)
+    
+    # Fast prefix check for is_relative_to (Python <3.9 compatibility, also generally faster than method call)
+    if candidate_parts[:len_sandbox_root] != sandbox_root_parts:
         raise PermissionError(f'File access not permitted: {file_path}')
-
-    # Get path relative to the root of the workspace inside the sandbox
-    path_in_workspace = abs_path_in_sandbox.relative_to(
-        Path(workspace_mount_path_in_sandbox)
-    )
-
-    # Get path relative to host
-    path_in_host_workspace = Path(workspace_base) / path_in_workspace
+    
+    # Simple tuple slicing is faster than .relative_to for known prefix
+    path_in_workspace = Path(*candidate_parts[len_sandbox_root:])
+    
+    # Host path
+    path_in_host_workspace = workspace_base_path / path_in_workspace
 
     return path_in_host_workspace
 
